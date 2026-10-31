@@ -6,8 +6,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Odoo Server 18.0-20250807\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-31 10:00+0000\n"
-"PO-Revision-Date: 2026-10-31 10:00+0000\n"
+"POT-Creation-Date: 2026-10-31 23:37+0000\n"
+"PO-Revision-Date: 2026-10-31 23:37+0000\n"
 "Last-Translator: \n"
 "Language-Team: \n"
 "MIME-Version: 1.0\n"
@@ -71,6 +71,11 @@ msgid "AI Handoff Phrases"
 msgstr ""
 
 #. module: woow_ai_contact_livechat
+#: model:ir.model,name:woow_ai_contact_livechat.model_woow_ai_livechat_event
+msgid "AI Live Chat Conversation Event"
+msgstr ""
+
+#. module: woow_ai_contact_livechat
 #. odoo-python
 #: code:addons/woow_ai_contact_livechat/models/discuss_channel.py:0
 msgid "AI Live Chat: no answer"
@@ -113,6 +118,16 @@ msgstr ""
 #. odoo-javascript
 #: code:addons/woow_ai_contact_livechat/static/src/channel_commands.js:0
 msgid "AI contact: /ai on resumes it now, /ai off pauses it"
+msgstr ""
+
+#. module: woow_ai_contact_livechat
+#: model:ir.model.fields.selection,name:woow_ai_contact_livechat.selection__woow_ai_livechat_event__kind__pause
+msgid "AI paused by an operator"
+msgstr ""
+
+#. module: woow_ai_contact_livechat
+#: model:ir.model.fields.selection,name:woow_ai_contact_livechat.selection__woow_ai_livechat_event__kind__resume
+msgid "AI resumed by an operator"
 msgstr ""
 
 #. module: woow_ai_contact_livechat
@@ -164,11 +179,18 @@ msgid "Confirm that the price regression passed on the new backend first."
 msgstr ""
 
 #. module: woow_ai_contact_livechat
+#: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_event__channel_id
+msgid "Conversation"
+msgstr ""
+
+#. module: woow_ai_contact_livechat
+#: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_event__create_uid
 #: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_switch_wizard__create_uid
 msgid "Created by"
 msgstr ""
 
 #. module: woow_ai_contact_livechat
+#: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_event__create_date
 #: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_switch_wizard__create_date
 msgid "Created on"
 msgstr ""
@@ -179,8 +201,14 @@ msgid "Discussion Channel"
 msgstr ""
 
 #. module: woow_ai_contact_livechat
+#: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_event__display_name
 #: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_switch_wizard__display_name
 msgid "Display Name"
+msgstr ""
+
+#. module: woow_ai_contact_livechat
+#: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_event__kind
+msgid "Event"
 msgstr ""
 
 #. module: woow_ai_contact_livechat
@@ -223,21 +251,37 @@ msgid "Finished"
 msgstr ""
 
 #. module: woow_ai_contact_livechat
+#. odoo-python
+#: code:addons/woow_ai_contact_livechat/models/legacy_migration.py:0
+msgid ""
+"Found on %(date)s (UTC) with the AI contact \"%(name)s\" already set by "
+"hand: kept. im_livechat_ai answered this channel: %(answer)s."
+msgstr ""
+
+#. module: woow_ai_contact_livechat
+#: model:ir.model.fields.selection,name:woow_ai_contact_livechat.selection__woow_ai_livechat_event__kind__handoff
+msgid "Handed over to a human"
+msgstr ""
+
+#. module: woow_ai_contact_livechat
 #: model_terms:ir.ui.view,arch_db:woow_ai_contact_livechat.im_livechat_channel_view_form_woow_ai
 msgid "Human Handoff"
 msgstr ""
 
 #. module: woow_ai_contact_livechat
+#: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_event__id
 #: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_switch_wizard__id
 msgid "ID"
 msgstr ""
 
 #. module: woow_ai_contact_livechat
+#: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_event__write_uid
 #: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_switch_wizard__write_uid
 msgid "Last Updated by"
 msgstr ""
 
 #. module: woow_ai_contact_livechat
+#: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_event__write_date
 #: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_switch_wizard__write_date
 msgid "Last Updated on"
 msgstr ""
@@ -313,6 +357,11 @@ msgid ""
 msgstr ""
 
 #. module: woow_ai_contact_livechat
+#: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_event__message_id
+msgid "Notice"
+msgstr ""
+
+#. module: woow_ai_contact_livechat
 #. odoo-python
 #: code:addons/woow_ai_contact_livechat/models/discuss_channel.py:0
 msgid "Only Live Chat conversations have an AI pause."
@@ -349,6 +398,16 @@ msgid "Open the conversation"
 msgstr ""
 
 #. module: woow_ai_contact_livechat
+#: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_event__user_id
+msgid "Operator"
+msgstr ""
+
+#. module: woow_ai_contact_livechat
+#: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_event__minutes
+msgid "Pause (minutes)"
+msgstr ""
+
+#. module: woow_ai_contact_livechat
 #: model_terms:ir.ui.view,arch_db:woow_ai_contact_livechat.discuss_channel_view_form_woow_ai
 msgid "Pause AI"
 msgstr ""
@@ -356,6 +415,11 @@ msgstr ""
 #. module: woow_ai_contact_livechat
 #: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_discuss_channel__woow_ai_pause_notice_sent
 msgid "Paused Notice Sent"
+msgstr ""
+
+#. module: woow_ai_contact_livechat
+#: model:ir.model.fields.selection,name:woow_ai_contact_livechat.selection__woow_ai_livechat_event__kind__paused_notice
+msgid "Paused notice"
 msgstr ""
 
 #. module: woow_ai_contact_livechat
@@ -451,9 +515,9 @@ msgstr ""
 #. odoo-python
 #: code:addons/woow_ai_contact_livechat/models/legacy_migration.py:0
 msgid ""
-"Switched on %(date)s (UTC) by %(user)s: AI %(state)s, %(moved)s job(s) "
-"moved (%(busy)s conversation(s) answered by the AI contact once "
-"im_livechat_ai is done)."
+"Switched on %(date)s (UTC) by %(user)s: AI %(state)s, %(moved)s job(s) moved"
+" (%(busy)s conversation(s) answered by the AI contact once im_livechat_ai is"
+" done)."
 msgstr ""
 
 #. module: woow_ai_contact_livechat
@@ -556,6 +620,11 @@ msgid "The migration fields are written by the migration actions only."
 msgstr ""
 
 #. module: woow_ai_contact_livechat
+#: model:ir.model.fields,help:woow_ai_contact_livechat.field_woow_ai_livechat_event__message_id
+msgid "The notice the AI posted for this event (left out of the history)."
+msgstr ""
+
+#. module: woow_ai_contact_livechat
 #. odoo-python
 #: code:addons/woow_ai_contact_livechat/models/im_livechat_channel.py:0
 msgid "The pause must be between 1 and 1440 minutes."
@@ -578,6 +647,11 @@ msgid ""
 "The visitor in \"%(name)s\" asks for a human. The AI is paused for "
 "%(minutes)s minutes: please take over. Type /ai on in the conversation to "
 "resume the AI now."
+msgstr ""
+
+#. module: woow_ai_contact_livechat
+#: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_event__trigger_message_id
+msgid "Visitor Message"
 msgstr ""
 
 #. module: woow_ai_contact_livechat
@@ -696,12 +770,4 @@ msgstr ""
 #. odoo-python
 #: code:addons/woow_ai_contact_livechat/models/legacy_migration.py:0
 msgid "yes"
-msgstr ""
-
-#. module: woow_ai_contact_livechat
-#. odoo-python
-#: code:addons/woow_ai_contact_livechat/models/legacy_migration.py:0
-msgid ""
-"Found on %(date)s (UTC) with the AI contact \"%(name)s\" already set by hand: "
-"kept. im_livechat_ai answered this channel: %(answer)s."
 msgstr ""

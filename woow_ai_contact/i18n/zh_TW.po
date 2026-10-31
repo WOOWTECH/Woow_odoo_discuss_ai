@@ -1097,3 +1097,53 @@ msgid ""
 "seconds. max_cron_threads = 2 or more, and one cron process per database "
 "with AI contacts, is recommended."
 msgstr "警告：cron 執行者只有 %(threads)s 個 cron thread、服務 %(dbs)s 個資料庫，回覆處理期間其他排程（和其他資料庫）要等，所以每一趟最多只花 60 秒接新的回覆。建議 max_cron_threads 設 2 以上，並且每個有 AI 聯絡人的資料庫各有自己的 cron 程序。"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__document_mode
+msgid "Documents Users Send"
+msgstr "使用者傳送的文件"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields.selection,name:woow_ai_contact.selection__woow_ai_contact__document_mode__link
+msgid "Download links only"
+msgstr "只給下載連結"
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid "Files Users Send"
+msgstr "使用者傳送的檔案"
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid "Files in AI Replies"
+msgstr "AI 回覆中的檔案"
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid ""
+"Images are always sent inline. n8n backends get every attachment as a signed\n"
+"                                download link (the workflow downloads it)."
+msgstr "圖片一律內嵌送出。n8n 後端的每個附件都是簽名下載網址（由工作流程自行下載）。"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_contact__document_mode
+msgid ""
+"OpenAI compatible backends only: how the documents users send (PDF, xlsx, "
+"xls, docx, csv, txt, md, json) reach the model; models do not open download "
+"links. \"PDF as a file\": PDFs are sent as file parts (LiteLLM and OpenAI "
+"read them), other documents as text read by Odoo. \"Text\": Odoo reads the "
+"text of every document, PDFs included (use it for Hermes and other servers "
+"that do not accept file parts; scanned PDFs without a text layer give no "
+"text). \"Download links only\": a signed 1-hour link, as before (the backend"
+" must download it itself). Size limits: docs/PROTOCOL.md."
+msgstr "只用於 OpenAI 相容後端：使用者傳送的文件（PDF、xlsx、xls、docx、csv、txt、md、json）怎麼交給模型；模型不會自己開下載連結。「PDF 以檔案送」：PDF 以 file 內容送出（LiteLLM 與 OpenAI 讀得到），其他文件由 Odoo 擷取文字送出。「全部擷取文字」：所有文件（含 PDF）都由 Odoo 擷取文字（Hermes 等不接受 file 內容的後端請選這個；沒有文字層的掃描檔 PDF 擷取不到文字）。「只給下載連結」：和以前一樣只給 1 小時簽名網址（後端要自己下載）。大小上限見 docs/PROTOCOL.md。"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields.selection,name:woow_ai_contact.selection__woow_ai_contact__document_mode__file
+msgid "PDF as a file, other documents as text"
+msgstr "PDF 以檔案送、其他文件以文字送"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields.selection,name:woow_ai_contact.selection__woow_ai_contact__document_mode__text
+msgid "Text extracted from every document"
+msgstr "全部擷取文字"

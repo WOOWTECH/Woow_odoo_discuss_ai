@@ -6,8 +6,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Odoo Server 18.0-20250807\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-31 09:08+0000\n"
-"PO-Revision-Date: 2026-10-31 09:08+0000\n"
+"POT-Creation-Date: 2026-10-31 23:37+0000\n"
+"PO-Revision-Date: 2026-10-31 23:37+0000\n"
 "Last-Translator: \n"
 "Language-Team: \n"
 "MIME-Version: 1.0\n"
@@ -36,6 +36,12 @@ msgstr ""
 #. module: woow_ai_contact
 #: model_terms:ir.ui.view,arch_db:woow_ai_contact.portal_my_ai_contacts
 msgid "<span class=\"btn btn-sm btn-primary\">Start chatting</span>"
+msgstr ""
+
+#. module: woow_ai_contact
+#. odoo-python
+#: code:addons/woow_ai_contact/models/ai_contact.py:0
+msgid "A cron runner is available (%(where)s)."
 msgstr ""
 
 #. module: woow_ai_contact
@@ -85,6 +91,11 @@ msgstr ""
 #. module: woow_ai_contact
 #: model:ir.actions.server,name:woow_ai_contact.ir_cron_cleanup_ai_logs_ir_actions_server
 msgid "AI Contacts: Delete Old Call Logs and Jobs"
+msgstr ""
+
+#. module: woow_ai_contact
+#: model:ir.actions.server,name:woow_ai_contact.ir_cron_run_ai_jobs_ir_actions_server
+msgid "AI Contacts: Run AI Replies"
 msgstr ""
 
 #. module: woow_ai_contact
@@ -242,6 +253,14 @@ msgid "Created on"
 msgstr ""
 
 #. module: woow_ai_contact
+#. odoo-python
+#: code:addons/woow_ai_contact/models/ai_contact.py:0
+msgid ""
+"Cron time limit: %(limit)s s (%(server)s server); longest timeout: "
+"%(timeout)s s."
+msgstr ""
+
+#. module: woow_ai_contact
 #: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
 msgid "Current Push Key"
 msgstr ""
@@ -277,6 +296,11 @@ msgid "Display Name"
 msgstr ""
 
 #. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__document_mode
+msgid "Documents Users Send"
+msgstr ""
+
+#. module: woow_ai_contact
 #: model:ir.model.fields.selection,name:woow_ai_contact.selection__woow_ai_job__state__done
 #: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_push_key_wizard_form
 msgid "Done"
@@ -285,6 +309,11 @@ msgstr ""
 #. module: woow_ai_contact
 #: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__download_domains
 msgid "Download Domains"
+msgstr ""
+
+#. module: woow_ai_contact
+#: model:ir.model.fields.selection,name:woow_ai_contact.selection__woow_ai_contact__document_mode__link
+msgid "Download links only"
 msgstr ""
 
 #. module: woow_ai_contact
@@ -347,6 +376,16 @@ msgid "Files"
 msgstr ""
 
 #. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid "Files Users Send"
+msgstr ""
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid "Files in AI Replies"
+msgstr ""
+
+#. module: woow_ai_contact
 #: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_contact__download_domains
 msgid ""
 "Files linked in AI replies are downloaded and attached only from these "
@@ -356,6 +395,28 @@ msgstr ""
 #. module: woow_ai_contact
 #: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_job__finished_at
 msgid "Finished"
+msgstr ""
+
+#. module: woow_ai_contact
+#. odoo-python
+#: code:addons/woow_ai_contact/models/ai_contact.py:0
+msgid ""
+"Forced by the system parameter woow_ai_contact.job_runner = cron, but the "
+"cron time limit (%(limit)s s) is shorter than the longest timeout plus "
+"margins (%(required)s s): a long reply is cut when the cron worker is "
+"stopped, and processed again."
+msgstr ""
+
+#. module: woow_ai_contact
+#. odoo-python
+#: code:addons/woow_ai_contact/models/ai_contact.py:0
+msgid "Forced by the system parameter woow_ai_contact.job_runner = cron."
+msgstr ""
+
+#. module: woow_ai_contact
+#. odoo-python
+#: code:addons/woow_ai_contact/models/ai_contact.py:0
+msgid "Forced by the system parameter woow_ai_contact.job_runner = thread."
 msgstr ""
 
 #. module: woow_ai_contact
@@ -452,6 +513,13 @@ msgid ""
 msgstr ""
 
 #. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid ""
+"Images are always sent inline. n8n backends get every attachment as a signed\n"
+"                                download link (the workflow downloads it)."
+msgstr ""
+
+#. module: woow_ai_contact
 #: model:ir.model.fields.selection,name:woow_ai_contact.selection__woow_ai_call_log__status__invalid_response
 msgid "Invalid Response"
 msgstr ""
@@ -459,6 +527,11 @@ msgstr ""
 #. module: woow_ai_contact
 #: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_call_log__job_id
 msgid "Job"
+msgstr ""
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__job_runner_warning
+msgid "Job Runner Warning"
 msgstr ""
 
 #. module: woow_ai_contact
@@ -533,6 +606,22 @@ msgid "No AI contact is available to you yet."
 msgstr ""
 
 #. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid ""
+"No API key is saved. Changing the endpoint host or the backend type removes "
+"the saved key, so it is never sent to another server: enter the key again."
+msgstr ""
+
+#. module: woow_ai_contact
+#. odoo-python
+#: code:addons/woow_ai_contact/models/ai_contact.py:0
+msgid ""
+"No cron runner was found: max_cron_threads is 0 in this server, or it runs "
+"with --stop-after-init, and no other process ran the scheduled action "
+"recently."
+msgstr ""
+
+#. module: woow_ai_contact
 #: model:ir.model.fields.selection,name:woow_ai_contact.selection__woow_ai_call_log__status__ok
 msgid "OK"
 msgstr ""
@@ -569,6 +658,19 @@ msgid ""
 msgstr ""
 
 #. module: woow_ai_contact
+#: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_contact__document_mode
+msgid ""
+"OpenAI compatible backends only: how the documents users send (PDF, xlsx, "
+"xls, docx, csv, txt, md, json) reach the model; models do not open download "
+"links. \"PDF as a file\": PDFs are sent as file parts (LiteLLM and OpenAI "
+"read them), other documents as text read by Odoo. \"Text\": Odoo reads the "
+"text of every document, PDFs included (use it for Hermes and other servers "
+"that do not accept file parts; scanned PDFs without a text layer give no "
+"text). \"Download links only\": a signed 1-hour link, as before (the backend"
+" must download it itself). Size limits: docs/PROTOCOL.md."
+msgstr ""
+
+#. module: woow_ai_contact
 #: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_contact__api_key
 msgid ""
 "OpenAI compatible: sent as \"Authorization: Bearer\". n8n: the signing "
@@ -590,6 +692,11 @@ msgstr ""
 #: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_contact__system_prompt
 #: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
 msgid "Optional. Leave empty to let the backend decide the role."
+msgstr ""
+
+#. module: woow_ai_contact
+#: model:ir.model.fields.selection,name:woow_ai_contact.selection__woow_ai_contact__document_mode__file
+msgid "PDF as a file, other documents as text"
 msgstr ""
 
 #. module: woow_ai_contact
@@ -665,6 +772,30 @@ msgid "Remove the saved backend API key?"
 msgstr ""
 
 #. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid ""
+"Replies are not processed by the cron runner on this server: see below."
+msgstr ""
+
+#. module: woow_ai_contact
+#. odoo-python
+#: code:addons/woow_ai_contact/models/ai_contact.py:0
+msgid ""
+"Replies are processed in a background thread of the web worker that received"
+" the message (fallback mode): a reply still running when that worker "
+"restarts is cut and processed again."
+msgstr ""
+
+#. module: woow_ai_contact
+#. odoo-python
+#: code:addons/woow_ai_contact/models/ai_contact.py:0
+msgid ""
+"Replies are processed in the background by the scheduled action \"AI "
+"Contacts: Run AI Replies\", outside the web workers (at most %(n)s "
+"conversations at a time)."
+msgstr ""
+
+#. module: woow_ai_contact
 #: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_job_form
 msgid "Reply Job"
 msgstr ""
@@ -679,6 +810,12 @@ msgstr ""
 #. module: woow_ai_contact
 #: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_job__reply_message_id
 msgid "Reply Message"
+msgstr ""
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__job_runner_info
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid "Reply Processing"
 msgstr ""
 
 #. module: woow_ai_contact
@@ -815,6 +952,11 @@ msgid "Test Connection"
 msgstr ""
 
 #. module: woow_ai_contact
+#: model:ir.model.fields.selection,name:woow_ai_contact.selection__woow_ai_contact__document_mode__text
+msgid "Text extracted from every document"
+msgstr ""
+
+#. module: woow_ai_contact
 #. odoo-python
 #: code:addons/woow_ai_contact/models/ai_contact_backend.py:0
 msgid "The backend answered HTTP %s."
@@ -836,6 +978,15 @@ msgstr ""
 #. odoo-python
 #: code:addons/woow_ai_contact/models/ai_contact.py:0
 msgid "The bot partner of an AI contact cannot be a user."
+msgstr ""
+
+#. module: woow_ai_contact
+#. odoo-python
+#: code:addons/woow_ai_contact/models/ai_contact.py:0
+msgid ""
+"The cron time limit (%(limit)s s) is shorter than the longest AI contact "
+"timeout plus margins (%(required)s s). Set limit_time_real_cron to at least "
+"%(required)s to process replies in the cron runner."
 msgstr ""
 
 #. module: woow_ai_contact
@@ -915,14 +1066,36 @@ msgid ""
 msgstr ""
 
 #. module: woow_ai_contact
+#. odoo-python
+#: code:addons/woow_ai_contact/models/ai_contact.py:0
+msgid ""
+"Warning: the cron runner has %(threads)s cron thread(s) for %(dbs)s "
+"database(s), so other scheduled actions (and databases) wait while replies "
+"run; each pass therefore starts new replies for at most 60 seconds. "
+"max_cron_threads = 2 or more, and one cron process per database with AI "
+"contacts, is recommended."
+msgstr ""
+
+#. module: woow_ai_contact
 #: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__welcome_message
 msgid "Welcome Message"
+msgstr ""
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_contact__job_runner_info
+msgid "Where the AI replies are processed (docs/DESIGN.md, job queue)."
 msgstr ""
 
 #. module: woow_ai_contact
 #. odoo-python
 #: code:addons/woow_ai_contact/models/discuss_channel.py:0
 msgid "You do not have permission to use this AI contact."
+msgstr ""
+
+#. module: woow_ai_contact
+#. odoo-python
+#: code:addons/woow_ai_contact/models/ai_contact.py:0
+msgid "another process"
 msgstr ""
 
 #. module: woow_ai_contact
@@ -949,130 +1122,7 @@ msgid "n8n webhook"
 msgstr ""
 
 #. module: woow_ai_contact
-#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
-msgid ""
-"No API key is saved. Changing the endpoint host or the backend type removes "
-"the saved key, so it is never sent to another server: enter the key again."
-msgstr ""
-
-#. module: woow_ai_contact
-#. odoo-python
-#: code:addons/woow_ai_contact/models/ai_contact.py:0
-msgid "A cron runner is available (%(where)s)."
-msgstr ""
-
-#. module: woow_ai_contact
-#: model:ir.actions.server,name:woow_ai_contact.ir_cron_run_ai_jobs_ir_actions_server
-msgid "AI Contacts: Run AI Replies"
-msgstr ""
-
-#. module: woow_ai_contact
-#. odoo-python
-#: code:addons/woow_ai_contact/models/ai_contact.py:0
-msgid ""
-"Cron time limit: %(limit)s s (%(server)s server); longest timeout: "
-"%(timeout)s s."
-msgstr ""
-
-#. module: woow_ai_contact
-#. odoo-python
-#: code:addons/woow_ai_contact/models/ai_contact.py:0
-msgid ""
-"Forced by the system parameter woow_ai_contact.job_runner = cron, but the "
-"cron time limit (%(limit)s s) is shorter than the longest timeout plus "
-"margins (%(required)s s): a long reply is cut when the cron worker is "
-"stopped, and processed again."
-msgstr ""
-
-#. module: woow_ai_contact
-#. odoo-python
-#: code:addons/woow_ai_contact/models/ai_contact.py:0
-msgid "Forced by the system parameter woow_ai_contact.job_runner = cron."
-msgstr ""
-
-#. module: woow_ai_contact
-#. odoo-python
-#: code:addons/woow_ai_contact/models/ai_contact.py:0
-msgid "Forced by the system parameter woow_ai_contact.job_runner = thread."
-msgstr ""
-
-#. module: woow_ai_contact
-#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__job_runner_warning
-msgid "Job Runner Warning"
-msgstr ""
-
-#. module: woow_ai_contact
-#. odoo-python
-#: code:addons/woow_ai_contact/models/ai_contact.py:0
-msgid ""
-"No cron runner was found: max_cron_threads is 0 in this server, or it runs "
-"with --stop-after-init, and no other process ran the scheduled action "
-"recently."
-msgstr ""
-
-#. module: woow_ai_contact
-#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
-msgid ""
-"Replies are not processed by the cron runner on this server: see below."
-msgstr ""
-
-#. module: woow_ai_contact
-#. odoo-python
-#: code:addons/woow_ai_contact/models/ai_contact.py:0
-msgid ""
-"Replies are processed in a background thread of the web worker that received"
-" the message (fallback mode): a reply still running when that worker "
-"restarts is cut and processed again."
-msgstr ""
-
-#. module: woow_ai_contact
-#. odoo-python
-#: code:addons/woow_ai_contact/models/ai_contact.py:0
-msgid ""
-"Replies are processed in the background by the scheduled action \"AI "
-"Contacts: Run AI Replies\", outside the web workers (at most %(n)s "
-"conversations at a time)."
-msgstr ""
-
-#. module: woow_ai_contact
-#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__job_runner_info
-#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
-msgid "Reply Processing"
-msgstr ""
-
-#. module: woow_ai_contact
-#. odoo-python
-#: code:addons/woow_ai_contact/models/ai_contact.py:0
-msgid ""
-"The cron time limit (%(limit)s s) is shorter than the longest AI contact "
-"timeout plus margins (%(required)s s). Set limit_time_real_cron to at least "
-"%(required)s to process replies in the cron runner."
-msgstr ""
-
-#. module: woow_ai_contact
-#: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_contact__job_runner_info
-msgid "Where the AI replies are processed (docs/DESIGN.md, job queue)."
-msgstr ""
-
-#. module: woow_ai_contact
-#. odoo-python
-#: code:addons/woow_ai_contact/models/ai_contact.py:0
-msgid "another process"
-msgstr ""
-
-#. module: woow_ai_contact
 #. odoo-python
 #: code:addons/woow_ai_contact/models/ai_contact.py:0
 msgid "this server"
-msgstr ""
-
-#. module: woow_ai_contact
-#. odoo-python
-#: code:addons/woow_ai_contact/models/ai_contact.py:0
-msgid ""
-"Warning: the cron runner has %(threads)s cron thread(s) for %(dbs)s "
-"database(s), so other scheduled actions (and databases) wait while "
-"replies run; each pass therefore starts new replies for at most 60 "
-"seconds. max_cron_threads = 2 or more, and one cron process per database "
-"with AI contacts, is recommended."
 msgstr ""

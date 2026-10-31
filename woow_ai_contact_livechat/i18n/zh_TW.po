@@ -706,3 +706,63 @@ msgid ""
 "Found on %(date)s (UTC) with the AI contact \"%(name)s\" already set by hand: "
 "kept. im_livechat_ai answered this channel: %(answer)s."
 msgstr "%(date)s（UTC）發現已手動設定 AI 聯絡人「%(name)s」：保留。im_livechat_ai 原本回覆這個頻道：%(answer)s。"
+
+#. module: woow_ai_contact_livechat
+#: model:ir.model,name:woow_ai_contact_livechat.model_woow_ai_livechat_event
+msgid "AI Live Chat Conversation Event"
+msgstr "AI 線上客服對話事件"
+
+#. module: woow_ai_contact_livechat
+#: model:ir.model.fields.selection,name:woow_ai_contact_livechat.selection__woow_ai_livechat_event__kind__pause
+msgid "AI paused by an operator"
+msgstr "客服暫停 AI"
+
+#. module: woow_ai_contact_livechat
+#: model:ir.model.fields.selection,name:woow_ai_contact_livechat.selection__woow_ai_livechat_event__kind__resume
+msgid "AI resumed by an operator"
+msgstr "客服恢復 AI"
+
+#. module: woow_ai_contact_livechat
+#: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_event__channel_id
+msgid "Conversation"
+msgstr "對話"
+
+#. module: woow_ai_contact_livechat
+#: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_event__kind
+msgid "Event"
+msgstr "事件"
+
+#. module: woow_ai_contact_livechat
+#: model:ir.model.fields.selection,name:woow_ai_contact_livechat.selection__woow_ai_livechat_event__kind__handoff
+msgid "Handed over to a human"
+msgstr "已轉接真人客服"
+
+#. module: woow_ai_contact_livechat
+#: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_event__message_id
+msgid "Notice"
+msgstr "通知訊息"
+
+#. module: woow_ai_contact_livechat
+#: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_event__user_id
+msgid "Operator"
+msgstr "客服人員"
+
+#. module: woow_ai_contact_livechat
+#: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_event__minutes
+msgid "Pause (minutes)"
+msgstr "暫停（分鐘）"
+
+#. module: woow_ai_contact_livechat
+#: model:ir.model.fields.selection,name:woow_ai_contact_livechat.selection__woow_ai_livechat_event__kind__paused_notice
+msgid "Paused notice"
+msgstr "暫停提示"
+
+#. module: woow_ai_contact_livechat
+#: model:ir.model.fields,help:woow_ai_contact_livechat.field_woow_ai_livechat_event__message_id
+msgid "The notice the AI posted for this event (left out of the history)."
+msgstr "AI 為這個事件張貼的通知（不放進送給模型的歷史）。"
+
+#. module: woow_ai_contact_livechat
+#: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_event__trigger_message_id
+msgid "Visitor Message"
+msgstr "訪客訊息"
