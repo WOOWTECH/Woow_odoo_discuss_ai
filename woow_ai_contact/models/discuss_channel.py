@@ -176,6 +176,11 @@ class DiscussChannel(models.Model):
         """Messages -> [{'role', 'text', 'attachments', 'message_id'}] (no empty entries)."""
         self.ensure_one()
         history = []
+        # one prefetch set for every attachment of the context: the job commits
+        # (and clears the cache) between building the history and the request,
+        # which then reads all of them in one query instead of one per message
+        # (concrete ids: the x2many's own lazy prefetch set is empty once the cache is cleared)
+        prefetch = tuple(messages.sudo().attachment_ids.ids)
         for message in messages:
             role = self._woow_ai_author_role(contact, message)
             if not role:
@@ -184,7 +189,7 @@ class DiscussChannel(models.Model):
             text = html_to_text(message.body)
             if len(text) > MAX_MESSAGE_TEXT:
                 text = text[:MAX_MESSAGE_TEXT] + TRUNCATED_MARKER
-            attachments = message.sudo().attachment_ids
+            attachments = message.sudo().attachment_ids.with_prefetch(prefetch)
             if not text and not attachments:
                 continue
             history.append({

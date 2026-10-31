@@ -463,3 +463,56 @@ class TestDispatchModel(AiContactCase):
         self.assertEqual(self.contact._installed_lang('fr_BE', 'en_US'), 'en_US')
         self.assertEqual(self.contact._installed_lang(None), 'en_US')
 
+
+@tagged('woow_ai_contact')
+class TestJobQueries(AiContactCase):
+    """The job path costs the same number of queries whatever the history size
+    (measured in the sandbox: 83 -> 76 queries for 4 messages, 122 -> 75 for 20)."""
+
+    def queries(self, fn):
+        self.env.flush_all()
+        self.env.invalidate_all()
+        before = self.env.cr.sql_log_count
+        fn()
+        self.env.flush_all()
+        return self.env.cr.sql_log_count - before
+
+    def fill(self, chat, count):
+        for i in range(count):
+            atts = self.attachment(chat, self.internal, name='f%s.pdf' % i, raw=b'%PDF-1.4 x' + bytes([65 + i]))
+            atts |= self.attachment(chat, self.internal, name='g%s.pdf' % i, raw=b'%PDF-1.4 y' + bytes([65 + i]))
+            self.post(chat, self.internal, 'message %s' % i, attachments=atts)
+
+    def job_queries(self, contact, count):
+        chat = self.chat(self.internal, contact)
+        self.fill(chat, count)
+        job = self.jobs(chat)[-1]
+        reply = openai_ok('ok') if contact.backend_type == 'openai' else None
+        if reply is None:
+            from .common import http_response
+            reply = http_response(200, {'reply': {'text': 'ok'}})
+        with patch(BACKEND_POST, return_value=reply):
+            n = self.queries(lambda: job._run_job(commit=False))
+        self.assertEqual(job.state, 'done', job.error)
+        return n
+
+    def test_history_attachments_no_n_plus_one(self):
+        for contact in (self.contact, self.n8n):
+            small = self.job_queries(contact, 2)
+            other = self.env['woow.ai.contact'].create({
+                'name': 'Big %s' % contact.backend_type, 'backend_type': contact.backend_type,
+                'endpoint_url': contact.endpoint_url, 'api_key': 'k', 'openai_stream': False})
+            big = self.job_queries(other, 12)
+            self.assertLessEqual(big - small, 2, '%s: %s queries for 2 messages, %s for 12' % (
+                contact.backend_type, small, big))
+
+    def test_post_reply_files_batched(self):
+        from .common import TINY_PNG
+        chat = self.chat(self.internal)
+
+        def prepared(n):
+            return {'html': '<p>x</p>', 'files': [{'name': 'a%s.png' % k, 'raw': TINY_PNG,
+                                                   'mimetype': 'image/png'} for k in range(n)]}
+        one = self.queries(lambda: self.contact._post_replies(chat, [prepared(1)]))
+        three = self.queries(lambda: self.contact._post_replies(chat, [prepared(3)]))
+        self.assertLessEqual(three - one, 1)

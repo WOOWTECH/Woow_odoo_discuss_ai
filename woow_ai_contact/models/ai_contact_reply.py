@@ -183,21 +183,19 @@ class WoowAiContactReply(models.Model):
         files = prepared.get('files') or []
         if not str(html).strip() and not files:
             return self.env['mail.message']
-        attachments = self.env['ir.attachment'].sudo()
-        for file in files:
-            attachment = attachments.create({
-                'name': file['name'],
-                'raw': file['raw'],
-                'mimetype': file['mimetype'],
-                'res_model': 'discuss.channel',
-                'res_id': channel.id,
-            })
+        attachments = self.env['ir.attachment'].sudo().create([{
+            'name': file['name'],
+            'raw': file['raw'],
+            'mimetype': file['mimetype'],
+            'res_model': 'discuss.channel',
+            'res_id': channel.id,
+        } for file in files]) if files else self.env['ir.attachment'].sudo()
+        for attachment, file in zip(attachments, files):
             if attachment.mimetype != file['mimetype']:
                 # ir.attachment re-sniffs "application/octet-stream" from the
                 # content (giving back text/html, image/svg+xml...): force it
                 # without the content, which keeps the given type
                 attachment.write({'mimetype': file['mimetype']})
-            attachments |= attachment
         return channel.with_context(mail_create_nosubscribe=True).message_post(
             body=Markup(html),
             author_id=contact.partner_id.id,
