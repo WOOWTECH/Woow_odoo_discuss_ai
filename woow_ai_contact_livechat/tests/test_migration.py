@@ -258,6 +258,10 @@ class TestMigration(LivechatCase):
             self.assertEqual(moved.state, 'pending')
             self.assertEqual(moved.run_count, 0)
             self.assertGreater(moved.run_after, fields.Datetime.now())
+            # core _defer: the dispatcher cron is triggered for the retry (not the 2-minute recovery)
+            cron = self.env.ref('woow_ai_contact.ir_cron_run_ai_jobs')
+            self.assertTrue(self.env['ir.cron.trigger'].search([('cron_id', '=', cron.id),
+                                                               ('call_at', '>=', moved.run_after)]))
         finally:
             release()
         # 1.1.0 finishes its chain: J1 is not answered (AI off), J2 never runs again

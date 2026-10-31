@@ -8,12 +8,12 @@ from datetime import timedelta
 from odoo import fields, models
 from odoo.tools import sql
 
-from odoo.addons.woow_ai_contact.models.ai_job import CRON_TRIGGER_DELAY_SECONDS, JOB_MAX_AGE_MINUTES
+from odoo.addons.woow_ai_contact.models.ai_job import JOB_MAX_AGE_MINUTES
 
 from .im_livechat_channel import DEFAULT_HANDOFF_MESSAGE
 from .legacy_migration import LEGACY_LOCK_NAMESPACE
 
-# a reply job of a conversation im_livechat_ai is still answering is retried after this
+# a reply job of a conversation im_livechat_ai is still answering is retried after this (_defer)
 LEGACY_WAIT_SECONDS = 15
 
 
@@ -63,12 +63,9 @@ class WoowAiJob(models.Model):
                 and self._woow_ai_is_livechat_job() and self._woow_ai_legacy_busy()):
             now = fields.Datetime.now()
             if not self.create_date or self.create_date >= now - timedelta(minutes=JOB_MAX_AGE_MINUTES):
-                due = now + timedelta(seconds=LEGACY_WAIT_SECONDS)
-                self.write({'state': 'pending', 'run_after': due,
-                            'error': 'waiting: im_livechat_ai is still answering this conversation'})
-                cron = self.env.ref('woow_ai_contact.ir_cron_recover_ai_jobs', raise_if_not_found=False)
-                if cron:
-                    cron.sudo()._trigger(due + timedelta(seconds=CRON_TRIGGER_DELAY_SECONDS))
+                # core _defer: the dispatcher retries it after LEGACY_WAIT_SECONDS
+                # (it stays in its pass; the cron is triggered at that time too)
+                self._defer(LEGACY_WAIT_SECONDS, 'waiting: im_livechat_ai is still answering this conversation')
                 commit_step()
                 return
         return super()._process_locked(commit_step, commit=commit)
