@@ -1,0 +1,61 @@
+# Push Gitea main and tags to the GitHub mirror WOOWTECH/Woow_odoo_discuss_ai.
+#
+# Gitea (git-prod.woowtech.io) is the source of truth; GitHub only receives
+# what lands here. Send changes as Gitea PRs; do not commit to GitHub directly.
+#
+# Gitea's built-in push mirror rejects SSH, and HTTPS would need a GitHub token
+# that expires, so the in-cluster runner pushes with a write deploy key limited
+# to this one GitHub repo. The private key is this repository's Actions secret
+# GH_MIRROR_SSH_KEY (same setup as Woow_k3s_pi_agent_package).
+#
+# Never forced: if GitHub main has commits Gitea lacks, the push is rejected and
+# this job fails.
+name: mirror-to-github
+
+on:
+  push:
+    branches: [main]
+    tags: ["*"]
+  workflow_dispatch:
+  # Catch-up when a run was missed (runner busy, GitHub unreachable).
+  schedule:
+    - cron: "43 */8 * * *"
+
+concurrency:
+  group: mirror-to-github
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Push main and tags to GitHub
+        env:
+          SSH_KEY: ${{ secrets.GH_MIRROR_SSH_KEY }}
+          GITHUB_MIRROR: git@github.com:WOOWTECH/Woow_odoo_discuss_ai.git
+          # GitHub's published ed25519 host key (SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU),
+          # pinned rather than ssh-keyscan, which trusts whatever host answers.
+          GITHUB_HOST_KEY: github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl
+        run: |
+          set -euo pipefail
+          if [ -z "$SSH_KEY" ]; then
+            echo "::error::secret GH_MIRROR_SSH_KEY is missing"
+            exit 1
+          fi
+          if ! command -v ssh >/dev/null; then
+            apt-get update -qq && apt-get install -y -qq openssh-client >/dev/null
+          fi
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/gh_mirror && chmod 600 ~/.ssh/gh_mirror
+          printf '%s\n' "$GITHUB_HOST_KEY" > ~/.ssh/known_hosts_github
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/gh_mirror -o IdentitiesOnly=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts_github -o StrictHostKeyChecking=yes"
+
+          git fetch --tags --force origin
+          git remote add github "$GITHUB_MIRROR"
+          git push github "refs/remotes/origin/main:refs/heads/main"
+          git push github --tags
+          echo "GitHub main -> $(git rev-parse --short refs/remotes/origin/main)"
