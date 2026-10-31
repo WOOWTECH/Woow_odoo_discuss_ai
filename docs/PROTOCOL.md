@@ -243,7 +243,9 @@ What the model sees, in the user turn of the message that carried the file:
   (cached values of formulas; at most 5,000 rows and 50 columns per sheet).
   docx: paragraphs and tables. csv / txt / md / json: the file as it is (UTF-8,
   UTF-16 with BOM or Big5 / cp950). PDF (mode `text`, or a PDF too large for a
-  file part): its text layer, at most 100 pages.
+  file part): its text layer, at most 100 pages; reading stops as soon as the
+  character limit is reached. Extracted texts are cached per Odoo process
+  (16 documents, by checksum): each reply sends the recent documents again.
 - `file`: the line `[附件] <name>（<mimetype>，<size>）：檔案已附在這則訊息`
   in the text part and the `file` part after the text (and images).
 - whenever a document is skipped or cut, a line

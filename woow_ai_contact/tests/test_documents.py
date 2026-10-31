@@ -138,6 +138,50 @@ class TestDocumentTools(AiContactCase):
         with self.assertRaises(documents.DocumentError):
             documents.pdf_text(b'%PDF-1.4 broken', 1000)
 
+    def test_pdf_reading_stops_at_the_budget(self):
+        pages = 30
+        objs = ['<</Type/Catalog/Pages 2 0 R>>',
+                '<</Type/Pages/Kids[%s]/Count %s>>' % (' '.join('%s 0 R' % (3 + 2 * i) for i in range(pages)), pages)]
+        for i in range(pages):
+            content = 'BT /F1 12 Tf 50 700 Td (PAGE-%02d %s) Tj ET' % (i, 'x' * 60)
+            objs.append('<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Contents %s 0 R'
+                        '/Resources<</Font<</F1 %s 0 R>>>>>>' % (4 + 2 * i, 3 + 2 * pages))
+            objs.append('<</Length %s>>\nstream\n%s\nendstream' % (len(content), content))
+        objs.append('<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>')
+        out, offsets = b'%PDF-1.4\n', []
+        for i, obj in enumerate(objs, 1):
+            offsets.append(len(out))
+            out += ('%s 0 obj\n%s\nendobj\n' % (i, obj)).encode()
+        xref = len(out)
+        out += ('xref\n0 %s\n0000000000 65535 f \n' % (len(objs) + 1)).encode()
+        out += b''.join(('%010d 00000 n \n' % o).encode() for o in offsets)
+        out += ('trailer<</Size %s/Root 1 0 R>>\nstartxref\n%s\n%%%%EOF' % (len(objs) + 1, xref)).encode()
+        full, truncated = documents.pdf_text(out, 100000)
+        self.assertFalse(truncated)
+        self.assertIn('PAGE-29', full)
+        part, truncated = documents.pdf_text(out, 200)  # stops after a few pages
+        self.assertTrue(truncated)
+        self.assertIn('PAGE-00', part)
+        self.assertLessEqual(len(part), 200)
+        self.assertNotIn('PAGE-29', part)
+
+    def test_extraction_cached_per_checksum(self):
+        documents._cache.clear()
+        with patch.object(documents, 'extract', wraps=documents.extract) as extract:
+            for _i in range(3):
+                self.assertEqual(documents.extract_cached('sum1', documents.TEXT, b'hello', 100, 'a.txt'),
+                                 ('hello', False))
+            self.assertEqual(extract.call_count, 1)
+            documents.extract_cached('sum2', documents.TEXT, b'other', 100, 'b.txt')
+            self.assertEqual(extract.call_count, 2)
+            for _i in range(2):
+                with self.assertRaises(documents.DocumentError):
+                    documents.extract_cached('sum3', documents.TEXT, b'a\x00b', 100, 'c.txt')
+            self.assertEqual(extract.call_count, 3)  # failures are cached too
+        for i in range(documents.CACHE_SIZE + 5):
+            documents.extract_cached('fill%s' % i, documents.TEXT, b'x', 100)
+        self.assertEqual(len(documents._cache), documents.CACHE_SIZE)
+
     def test_text_encodings_and_cut(self):
         self.assertEqual(documents.plain_text('名稱,價格\n燈,1520\n'.encode('cp950'), 100, 'a.csv'),
                          ('名稱,價格\n燈,1520', False))

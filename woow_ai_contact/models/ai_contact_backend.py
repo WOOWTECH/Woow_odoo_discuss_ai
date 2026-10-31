@@ -467,7 +467,7 @@ class WoowAiContactBackend(models.Model):
                         name, '內容沒有附上：這次請求的文件內容額度（%s 字）已用完。' % DOC_TEXT_BUDGET)}
                     continue
                 try:
-                    text, truncated = documents.extract(kind, raw, limit, name=name)
+                    text, truncated = documents.extract_cached(attachment.checksum, kind, raw, limit, name=name)
                 except documents.DocumentError as e:
                     found[key] = {'note': self._document_note(name, '無法讀取內容（%s）。' % e)}
                     continue
