@@ -1,0 +1,7 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_woow_ai_contact_system,woow.ai.contact.system,model_woow_ai_contact,base.group_system,1,1,1,1
+access_woow_ai_contact_user,woow.ai.contact.user,model_woow_ai_contact,base.group_user,1,0,0,0
+access_woow_ai_contact_portal,woow.ai.contact.portal,model_woow_ai_contact,base.group_portal,1,0,0,0
+access_woow_ai_job_system,woow.ai.job.system,model_woow_ai_job,base.group_system,1,1,0,1
+access_woow_ai_call_log_system,woow.ai.call.log.system,model_woow_ai_call_log,base.group_system,1,0,0,1
+access_woow_ai_push_key_wizard_system,woow.ai.push.key.wizard.system,model_woow_ai_push_key_wizard,base.group_system,1,1,1,1

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="woow_ai_contact.DiscussSidebarAiContacts">
+        <div t-if="state.contacts.length" class="o-woow-ai-DiscussSidebarAiContacts d-flex flex-column">
+            <div class="o-mail-DiscussSidebarCategory d-flex align-items-center"
+                 t-att-class="{ 'mx-1 my-2 position-relative': store.discuss.isSidebarCompact, 'mt-1 ms-1 me-2': !store.discuss.isSidebarCompact }">
+                <button class="o-mail-DiscussSidebarCategory-toggler btn btn-link text-reset flex-grow-1 d-flex p-0 text-start opacity-100-hover"
+                        t-att-class="{ 'align-items-baseline opacity-75 o-gap-0_5': !store.discuss.isSidebarCompact, 'align-items-center justify-content-center border-0 o-compact opacity-50 gap-1': store.discuss.isSidebarCompact }"
+                        t-att-title="title"
+                        t-on-click="() => state.open = !state.open">
+                    <t t-if="store.discuss.isSidebarCompact">
+                        <span class="rounded p-1"><i class="fa fa-fw fa-lg fa-magic"/></span>
+                    </t>
+                    <t t-else="">
+                        <i class="o-mail-DiscussSidebarCategory-icon o-xxsmaller fa-fw"
+                           t-att-class="state.open ? 'oi oi-chevron-down opacity-100' : 'oi oi-chevron-right opacity-50'"/>
+                        <span class="btn-sm p-0 text-uppercase text-break fw-bolder o-xsmaller text-muted"
+                              t-att-class="{ 'opacity-50': !state.open }" t-esc="title"/>
+                    </t>
+                </button>
+            </div>
+            <t t-if="state.open">
+                <div t-foreach="state.contacts" t-as="contact" t-key="contact.id"
+                     class="o-mail-DiscussSidebarChannel-container d-flex flex-column mx-2 bg-inherit">
+                    <button class="o-woow-ai-contact o-mail-DiscussSidebarChannel o-mail-DiscussSidebar-item btn btn-secondary d-flex align-items-center border-0 rounded-2 text-reset"
+                            t-att-class="{
+                                'o-active': isActive(contact),
+                                'bg-inherit': !isActive(contact),
+                                'justify-content-center o-compact mt-0 p-1': store.discuss.isSidebarCompact,
+                                'px-0 o-py-0_5': !store.discuss.isSidebarCompact,
+                            }"
+                            t-att-title="contact.description or contact.name"
+                            t-att-data-contact-id="contact.id"
+                            t-att-disabled="state.opening"
+                            t-on-click="() => this.openContact(contact)">
+                        <div class="bg-inherit position-relative d-flex flex-shrink-0" style="width: 24px; height: 24px;"
+                             t-att-class="{ 'ms-2 me-2': !store.discuss.isSidebarCompact }">
+                            <img class="w-100 h-100 rounded o_object_fit_cover" t-att-src="avatarUrl(contact)" alt="Avatar"/>
+                        </div>
+                        <span t-if="!store.discuss.isSidebarCompact" class="text-truncate small" t-esc="contact.name"/>
+                    </button>
+                </div>
+            </t>
+        </div>
+    </t>
+</templates>

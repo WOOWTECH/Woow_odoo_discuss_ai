@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <template id="portal_my_home_ai_contacts" name="AI Contacts" customize_show="True"
+              inherit_id="portal.portal_my_home" priority="40">
+        <div id="portal_common_category" position="inside">
+            <t t-call="portal.portal_docs_entry">
+                <t t-set="icon" t-value="'/woow_ai_contact/static/description/icon.svg'"/>
+                <t t-set="title">AI Contacts</t>
+                <t t-set="text">Chat with our AI assistants</t>
+                <t t-set="url" t-value="'/my/ai'"/>
+                <t t-set="placeholder_count" t-value="'woow_ai_contact_count'"/>
+            </t>
+        </div>
+    </template>
+
+    <template id="portal_breadcrumbs_ai_contacts" name="Portal breadcrumbs: AI contacts"
+              inherit_id="portal.portal_breadcrumbs" priority="40">
+        <xpath expr="//ol[hasclass('o_portal_submenu')]" position="inside">
+            <li t-if="page_name == 'woow_ai_contacts'" class="breadcrumb-item active">AI Contacts</li>
+        </xpath>
+    </template>
+
+    <template id="portal_my_ai_contacts" name="My AI Contacts">
+        <t t-call="portal.portal_layout">
+            <t t-set="breadcrumbs_searchbar" t-value="True"/>
+            <t t-call="portal.portal_searchbar">
+                <t t-set="title">AI Contacts</t>
+            </t>
+            <div t-if="not ai_contacts" class="alert alert-info mt-3">
+                No AI contact is available to you yet.
+            </div>
+            <div t-else="" class="row g-3 mt-1 o_woow_ai_contacts">
+                <div t-foreach="ai_contacts" t-as="ai_contact" class="col-12 col-md-6 col-lg-4">
+                    <a t-attf-href="/my/ai/#{ai_contact.id}/open"
+                       class="card h-100 text-decoration-none text-reset o_woow_ai_contact_card">
+                        <div class="card-body d-flex gap-3 align-items-start">
+                            <img t-attf-src="/web/image/woow.ai.contact/#{ai_contact.id}/image_128"
+                                 class="rounded-circle flex-shrink-0" width="56" height="56"
+                                 style="object-fit: cover;" t-att-alt="ai_contact.name"/>
+                            <div class="flex-grow-1 min-w-0">
+                                <h5 class="card-title mb-1 text-truncate" t-out="ai_contact.name"/>
+                                <p t-if="ai_contact.description" class="card-text text-muted small mb-2"
+                                   t-out="ai_contact.description"/>
+                                <span class="btn btn-sm btn-primary">Start chatting</span>
+                            </div>
+                        </div>
+                    </a>
+                </div>
+            </div>
+        </t>
+    </template>
+</odoo>

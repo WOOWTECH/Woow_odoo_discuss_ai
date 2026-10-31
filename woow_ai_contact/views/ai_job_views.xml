@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_woow_ai_job_list" model="ir.ui.view">
+        <field name="name">woow.ai.job.list</field>
+        <field name="model">woow.ai.job</field>
+        <field name="arch" type="xml">
+            <list string="Reply Jobs" create="0" edit="0"
+                  decoration-danger="state == 'failed'" decoration-muted="state == 'skipped'"
+                  decoration-info="state in ('pending', 'running')">
+                <field name="create_date" string="Created"/>
+                <field name="contact_id"/>
+                <field name="channel_id"/>
+                <field name="kind"/>
+                <field name="state"/>
+                <field name="run_count"/>
+                <field name="finished_at"/>
+                <field name="error"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_woow_ai_job_form" model="ir.ui.view">
+        <field name="name">woow.ai.job.form</field>
+        <field name="model">woow.ai.job</field>
+        <field name="arch" type="xml">
+            <form string="Reply Job" create="0" edit="0">
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="contact_id"/>
+                            <field name="channel_id"/>
+                            <field name="kind"/>
+                            <field name="state"/>
+                            <field name="run_count"/>
+                        </group>
+                        <group>
+                            <field name="create_date" string="Created"/>
+                            <field name="run_after"/>
+                            <field name="started_at"/>
+                            <field name="finished_at"/>
+                            <field name="context_message_id"/>
+                        </group>
+                    </group>
+                    <group>
+                        <field name="error"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_woow_ai_job_search" model="ir.ui.view">
+        <field name="name">woow.ai.job.search</field>
+        <field name="model">woow.ai.job</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="contact_id"/>
+                <field name="channel_id"/>
+                <filter name="unfinished" string="Unfinished" domain="[('state', 'in', ('pending', 'running'))]"/>
+                <filter name="failed" string="Failed" domain="[('state', '=', 'failed')]"/>
+                <group expand="0" string="Group By">
+                    <filter name="group_state" string="Status" context="{'group_by': 'state'}"/>
+                    <filter name="group_contact" string="AI Contact" context="{'group_by': 'contact_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_woow_ai_job" model="ir.actions.act_window">
+        <field name="name">Reply Jobs</field>
+        <field name="res_model">woow.ai.job</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

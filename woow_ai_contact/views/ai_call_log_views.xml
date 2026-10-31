@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_woow_ai_call_log_list" model="ir.ui.view">
+        <field name="name">woow.ai.call.log.list</field>
+        <field name="model">woow.ai.call.log</field>
+        <field name="arch" type="xml">
+            <list string="Call Logs" create="0" edit="0" decoration-danger="status != 'ok'">
+                <field name="create_date" string="Time"/>
+                <field name="contact_id"/>
+                <field name="channel_id" optional="show"/>
+                <field name="backend_type"/>
+                <field name="status"/>
+                <field name="http_status"/>
+                <field name="duration_ms"/>
+                <field name="error"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_woow_ai_call_log_form" model="ir.ui.view">
+        <field name="name">woow.ai.call.log.form</field>
+        <field name="model">woow.ai.call.log</field>
+        <field name="arch" type="xml">
+            <form string="Call Log" create="0" edit="0">
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="contact_id"/>
+                            <field name="channel_id"/>
+                            <field name="job_id"/>
+                            <field name="backend_type"/>
+                        </group>
+                        <group>
+                            <field name="create_date" string="Time"/>
+                            <field name="status"/>
+                            <field name="http_status"/>
+                            <field name="duration_ms"/>
+                        </group>
+                    </group>
+                    <group>
+                        <field name="error"/>
+                    </group>
+                    <notebook>
+                        <page string="Request Content" name="request" invisible="not request_payload">
+                            <field name="request_payload" widget="code" options="{'mode': 'javascript'}"/>
+                        </page>
+                        <page string="Response Content" name="response" invisible="not response_payload">
+                            <field name="response_payload" widget="code" options="{'mode': 'javascript'}"/>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_woow_ai_call_log_search" model="ir.ui.view">
+        <field name="name">woow.ai.call.log.search</field>
+        <field name="model">woow.ai.call.log</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="contact_id"/>
+                <field name="channel_id"/>
+                <filter name="errors" string="Errors" domain="[('status', '!=', 'ok')]"/>
+                <group expand="0" string="Group By">
+                    <filter name="group_status" string="Status" context="{'group_by': 'status'}"/>
+                    <filter name="group_contact" string="AI Contact" context="{'group_by': 'contact_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_woow_ai_call_log" model="ir.actions.act_window">
+        <field name="name">Call Logs</field>
+        <field name="res_model">woow.ai.call.log</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

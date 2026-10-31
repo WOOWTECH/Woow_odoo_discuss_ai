@@ -1,0 +1,51 @@
+# -*- coding: utf-8 -*-
+{
+    'name': 'AI Contacts for Discuss',
+    'version': '18.0.1.0.0',
+    'category': 'Productivity/Discuss',
+    'summary': 'Chat one-to-one with AI contacts (Hermes, LiteLLM, n8n) in Discuss and the portal',
+    'description': """
+AI Contacts for Discuss
+=======================
+
+Internal and portal users chat one-to-one with "AI contacts" in Discuss.
+Each AI contact is a bot partner connected to an OpenAI compatible backend
+(Hermes, LiteLLM, any /v1/chat/completions) or an n8n webhook.
+
+* Durable reply queue: replies are produced after commit by a background
+  worker, one at a time per conversation, recovered after a restart
+* "typing" indicator while the backend answers, 5 minute default timeout
+* Attachments both ways: user images inlined for OpenAI compatible backends,
+  other files as signed 1-hour download links; files in AI replies are
+  attached from allowlisted domains
+* Markdown replies (tables, lists, code) rendered to safe HTML
+* Push API: backends can message users first (one push key per AI contact)
+* Discuss sidebar "AI Contacts" section and portal /my/ai entry
+* Call logs for administrators (no conversation content unless enabled)
+
+See README.md and docs/PROTOCOL.md in the repository.
+    """,
+    'author': 'WOOWTECH',
+    'website': 'https://github.com/WOOWTECH/Woow_odoo_discuss_ai',
+    'license': 'LGPL-3',
+    'external_dependencies': {'python': ['requests']},
+    'depends': ['mail', 'portal'],
+    'data': [
+        'security/ir.model.access.csv',
+        'security/security.xml',
+        'data/data.xml',
+        'views/ai_contact_views.xml',
+        'views/ai_job_views.xml',
+        'views/ai_call_log_views.xml',
+        'views/menus.xml',
+        'views/portal_templates.xml',
+    ],
+    'assets': {
+        'web.assets_backend': [
+            'woow_ai_contact/static/src/discuss_sidebar/**/*',
+        ],
+    },
+    'installable': True,
+    'auto_install': False,
+    'application': False,
+}

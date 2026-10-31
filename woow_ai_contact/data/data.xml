@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <record id="partner_category_ai_contact" model="res.partner.category">
+            <field name="name">AI Contact</field>
+        </record>
+
+        <record id="ir_cron_recover_ai_jobs" model="ir.cron">
+            <field name="name">AI Contacts: Recover Reply Jobs</field>
+            <field name="model_id" ref="model_woow_ai_job"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_recover_jobs()</field>
+            <field name="interval_number">2</field>
+            <field name="interval_type">minutes</field>
+            <field name="active" eval="True"/>
+        </record>
+
+        <record id="ir_cron_cleanup_ai_logs" model="ir.cron">
+            <field name="name">AI Contacts: Delete Old Call Logs and Jobs</field>
+            <field name="model_id" ref="model_woow_ai_call_log"/>
+            <field name="state">code</field>
+            <field name="code">model._cleanup_old_logs()</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">days</field>
+            <field name="active" eval="True"/>
+        </record>
+    </data>
+</odoo>

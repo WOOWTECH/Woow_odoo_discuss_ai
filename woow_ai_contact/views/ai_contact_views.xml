@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_woow_ai_contact_list" model="ir.ui.view">
+        <field name="name">woow.ai.contact.list</field>
+        <field name="model">woow.ai.contact</field>
+        <field name="arch" type="xml">
+            <list string="AI Contacts">
+                <field name="sequence" widget="handle"/>
+                <field name="name"/>
+                <field name="backend_type"/>
+                <field name="endpoint_url"/>
+                <field name="api_key_set" string="Key Set"/>
+                <field name="push_key_hint" string="Push Key" optional="show"/>
+                <field name="allowed_group_ids" widget="many2many_tags" optional="show"/>
+                <field name="active" column_invisible="True"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_woow_ai_contact_form" model="ir.ui.view">
+        <field name="name">woow.ai.contact.form</field>
+        <field name="model">woow.ai.contact</field>
+        <field name="arch" type="xml">
+            <form string="AI Contact">
+                <header groups="base.group_system">
+                    <button name="action_generate_push_key" type="object" string="Generate Push Key"
+                            invisible="not id" class="btn-secondary"
+                            confirm="A new push key replaces the current one. Continue?"/>
+                    <button name="action_revoke_push_key" type="object" string="Revoke Push Key"
+                            invisible="not push_key_hint" class="btn-secondary"
+                            confirm="Revoke the push key? Pushes with it will be refused."/>
+                    <button name="action_clear_api_key" type="object" string="Remove API Key"
+                            invisible="not api_key_set" class="btn-secondary"
+                            confirm="Remove the saved backend API key?"/>
+                </header>
+                <sheet>
+                    <div class="oe_button_box" name="button_box" groups="base.group_system">
+                        <button name="action_view_call_logs" type="object" class="oe_stat_button" icon="fa-list-alt"
+                                invisible="not id">
+                            <field name="call_log_count" widget="statinfo" string="Call Logs"/>
+                        </button>
+                        <button name="action_open_bot_partner" type="object" class="oe_stat_button" icon="fa-user"
+                                string="Bot Partner" invisible="not partner_id"/>
+                    </div>
+                    <widget name="web_ribbon" title="Archived" bg_color="text-bg-danger" invisible="active"/>
+                    <field name="image_1920" widget="image" class="oe_avatar" options="{'preview_image': 'image_128'}"/>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1><field name="name" placeholder="e.g. Product Advisor"/></h1>
+                    </div>
+                    <group>
+                        <field name="description" placeholder="Shown to users in the AI contact lists"/>
+                        <field name="partner_id" readonly="1" invisible="not partner_id"/>
+                        <field name="active" invisible="1"/>
+                    </group>
+                    <notebook groups="base.group_system">
+                        <page string="Backend" name="backend">
+                            <group>
+                                <group>
+                                    <field name="backend_type" widget="radio"/>
+                                    <field name="endpoint_url"
+                                           placeholder="https://litellm.example.com/v1 or https://n8n.example.com/webhook/…"/>
+                                    <field name="api_key" password="True"
+                                           placeholder="Leave empty to keep the current key"/>
+                                    <field name="api_key_set"/>
+                                    <field name="model" invisible="backend_type != 'openai'"
+                                           placeholder="Empty: backend default"/>
+                                </group>
+                                <group>
+                                    <field name="max_history"/>
+                                    <field name="timeout_seconds"/>
+                                </group>
+                            </group>
+                            <group string="System Prompt">
+                                <field name="system_prompt" nolabel="1" colspan="2"
+                                       placeholder="Optional. Leave empty to let the backend decide the role."/>
+                            </group>
+                        </page>
+                        <page string="Messages" name="messages">
+                            <group>
+                                <field name="welcome_message" placeholder="Posted when a user opens the chat for the first time (markdown)"/>
+                                <field name="error_message" placeholder="Empty: Sorry, I cannot answer right now. Please try again later."/>
+                            </group>
+                        </page>
+                        <page string="Files" name="files">
+                            <group>
+                                <field name="download_domains" placeholder="files.example.com&#10;*.cdn.example.com"/>
+                                <field name="max_download_mb"/>
+                            </group>
+                            <div class="text-muted">
+                                Images and file links in AI replies are downloaded and attached to the message only
+                                from these hosts; other links stay links.
+                            </div>
+                        </page>
+                        <page string="Access" name="access">
+                            <group>
+                                <field name="allowed_group_ids" widget="many2many_tags"/>
+                            </group>
+                        </page>
+                        <page string="Push API" name="push">
+                            <group>
+                                <field name="push_key_hint" string="Current Push Key"/>
+                            </group>
+                            <div class="text-muted">
+                                POST /woow_ai/v1/push with "Authorization: Bearer &lt;push key&gt;" lets a backend send
+                                a message to a user as this AI contact. The key is shown once when generated; only its
+                                hash is stored. See docs/PROTOCOL.md.
+                            </div>
+                        </page>
+                        <page string="Debug" name="debug">
+                            <group>
+                                <field name="log_payload"/>
+                            </group>
+                            <div class="alert alert-warning" role="alert" invisible="not log_payload">
+                                Call logs now store the conversation content sent to and received from the backend.
+                                Private conversations become readable by administrators. Turn it off after debugging:
+                                stored content is then erased.
+                            </div>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_woow_ai_contact_search" model="ir.ui.view">
+        <field name="name">woow.ai.contact.search</field>
+        <field name="model">woow.ai.contact</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <filter name="archived" string="Archived" domain="[('active', '=', False)]"/>
+                <group expand="0" string="Group By">
+                    <filter name="group_backend" string="Backend" context="{'group_by': 'backend_type'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_woow_ai_contact" model="ir.actions.act_window">
+        <field name="name">AI Contacts</field>
+        <field name="res_model">woow.ai.contact</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Create an AI contact</p>
+            <p>Users chat with AI contacts in Discuss; each one is connected to an OpenAI compatible backend
+                (Hermes, LiteLLM) or an n8n webhook.</p>
+        </field>
+    </record>
+
+    <record id="view_woow_ai_push_key_wizard_form" model="ir.ui.view">
+        <field name="name">woow.ai.push.key.wizard.form</field>
+        <field name="model">woow.ai.push.key.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Push Key">
+                <div class="alert alert-warning" role="alert">
+                    Copy this key now. It is not stored and will not be shown again.
+                </div>
+                <group>
+                    <field name="contact_id"/>
+                    <field name="push_key" widget="CopyClipboardChar"/>
+                </group>
+                <footer>
+                    <button string="Done" special="cancel" class="btn-primary"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+</odoo>

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="0">
+        <!-- Users and portal users only see the AI contacts they may chat with -->
+        <record id="rule_woow_ai_contact_allowed" model="ir.rule">
+            <field name="name">AI contact: only contacts allowed for one of my groups</field>
+            <field name="model_id" ref="model_woow_ai_contact"/>
+            <field name="groups" eval="[Command.link(ref('base.group_user')), Command.link(ref('base.group_portal'))]"/>
+            <field name="domain_force">[('allowed_group_ids', 'in', user.groups_id.ids)]</field>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="True"/>
+        </record>
+        <record id="rule_woow_ai_contact_system" model="ir.rule">
+            <field name="name">AI contact: administrators see all</field>
+            <field name="model_id" ref="model_woow_ai_contact"/>
+            <field name="groups" eval="[Command.link(ref('base.group_system'))]"/>
+            <field name="domain_force">[(1, '=', 1)]</field>
+        </record>
+    </data>
+</odoo>

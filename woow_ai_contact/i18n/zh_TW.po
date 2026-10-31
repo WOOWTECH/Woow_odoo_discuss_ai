@@ -1,0 +1,808 @@
+# Translation of Odoo Server.
+# This file contains the translation of the following modules:
+# 	* woow_ai_contact
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: Odoo Server 18.0-20250807\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-10-31 08:13+0000\n"
+"PO-Revision-Date: 2026-10-31 08:13+0000\n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: \n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+#. module: woow_ai_contact
+#. odoo-python
+#: code:addons/woow_ai_contact/models/ai_contact.py:0
+msgid "%s (copy)"
+msgstr "%s（副本）"
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.portal_my_ai_contacts
+msgid "<span class=\"btn btn-sm btn-primary\">Start chatting</span>"
+msgstr "<span class=\"btn btn-sm btn-primary\">開始對話</span>"
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid "A new push key replaces the current one. Continue?"
+msgstr "新的推送金鑰會取代目前的金鑰，確定要繼續嗎？"
+
+#. module: woow_ai_contact
+#: model:ir.model,name:woow_ai_contact.model_woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_call_log__contact_id
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_job__contact_id
+#: model:res.partner.category,name:woow_ai_contact.partner_category_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_call_log_search
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_job_search
+msgid "AI Contact"
+msgstr "AI 聯絡人"
+
+#. module: woow_ai_contact
+#: model:ir.model,name:woow_ai_contact.model_woow_ai_call_log
+msgid "AI Contact Call Log"
+msgstr "AI 聯絡人呼叫紀錄"
+
+#. module: woow_ai_contact
+#: model:ir.model,name:woow_ai_contact.model_woow_ai_push_key_wizard
+msgid "AI Contact Push Key"
+msgstr "AI 聯絡人推送金鑰"
+
+#. module: woow_ai_contact
+#: model:ir.model,name:woow_ai_contact.model_woow_ai_job
+msgid "AI Contact Reply Job"
+msgstr "AI 聯絡人回覆工作"
+
+#. module: woow_ai_contact
+#. odoo-javascript
+#: code:addons/woow_ai_contact/static/src/discuss_sidebar/ai_contacts_sidebar.js:0
+#: model:ir.actions.act_window,name:woow_ai_contact.action_woow_ai_contact
+#: model:ir.ui.menu,name:woow_ai_contact.menu_woow_ai_contact
+#: model:ir.ui.menu,name:woow_ai_contact.menu_woow_ai_root
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.portal_breadcrumbs_ai_contacts
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.portal_my_ai_contacts
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.portal_my_home_ai_contacts
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_list
+msgid "AI Contacts"
+msgstr "AI 聯絡人"
+
+#. module: woow_ai_contact
+#: model:ir.actions.server,name:woow_ai_contact.ir_cron_cleanup_ai_logs_ir_actions_server
+msgid "AI Contacts: Delete Old Call Logs and Jobs"
+msgstr "AI 聯絡人：清除舊的呼叫紀錄與工作"
+
+#. module: woow_ai_contact
+#: model:ir.actions.server,name:woow_ai_contact.ir_cron_recover_ai_jobs_ir_actions_server
+msgid "AI Contacts: Recover Reply Jobs"
+msgstr "AI 聯絡人：恢復回覆工作"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields.selection,name:woow_ai_contact.selection__woow_ai_job__kind__reply
+msgid "AI Reply"
+msgstr "AI 回覆"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__api_key
+msgid "API Key"
+msgstr "API 金鑰"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__api_key_set
+msgid "API Key Configured"
+msgstr "已設定 API 金鑰"
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid "Access"
+msgstr "權限"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__active
+msgid "Active"
+msgstr "啟用"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__allowed_group_ids
+msgid "Allowed Groups"
+msgstr "可使用的群組"
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_search
+msgid "Archived"
+msgstr "已封存"
+
+#. module: woow_ai_contact
+#. odoo-javascript
+#: code:addons/woow_ai_contact/static/src/discuss_sidebar/ai_contacts_sidebar.xml:0
+msgid "Avatar"
+msgstr "頭像"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_call_log__backend_type
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__backend_type
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_search
+msgid "Backend"
+msgstr "後端"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__partner_id
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid "Bot Partner"
+msgstr "機器人聯絡人"
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_call_log_form
+msgid "Call Log"
+msgstr "呼叫紀錄"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__call_log_count
+msgid "Call Log Count"
+msgstr "呼叫紀錄數"
+
+#. module: woow_ai_contact
+#: model:ir.actions.act_window,name:woow_ai_contact.action_woow_ai_call_log
+#: model:ir.ui.menu,name:woow_ai_contact.menu_woow_ai_call_log
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_call_log_list
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid "Call Logs"
+msgstr "呼叫紀錄"
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid ""
+"Call logs now store the conversation content sent to and received from the backend.\n"
+"                                Private conversations become readable by administrators. Turn it off after debugging:\n"
+"                                stored content is then erased."
+msgstr "呼叫紀錄現在會儲存送往後端與後端回傳的對話內容，管理員因此看得到私人對話。除錯完請關閉：關閉後已儲存的內容會一併清除。"
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.portal_my_home_ai_contacts
+msgid "Chat with our AI assistants"
+msgstr "與我們的 AI 助理對話"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_push_key_wizard__contact_id
+msgid "Contact"
+msgstr "聯絡人"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_call_log__channel_id
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_job__channel_id
+msgid "Conversation"
+msgstr "對話"
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_push_key_wizard_form
+msgid "Copy this key now. It is not stored and will not be shown again."
+msgstr "請立即複製這把金鑰。系統不會儲存，之後也不會再顯示。"
+
+#. module: woow_ai_contact
+#. odoo-javascript
+#: code:addons/woow_ai_contact/static/src/discuss_sidebar/ai_contacts_sidebar.js:0
+msgid "Could not open the conversation with this AI contact."
+msgstr "無法開啟與這個 AI 聯絡人的對話。"
+
+#. module: woow_ai_contact
+#: model_terms:ir.actions.act_window,help:woow_ai_contact.action_woow_ai_contact
+msgid "Create an AI contact"
+msgstr "建立 AI 聯絡人"
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_job_form
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_job_list
+msgid "Created"
+msgstr "建立時間"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_call_log__create_uid
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__create_uid
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_job__create_uid
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_push_key_wizard__create_uid
+msgid "Created by"
+msgstr "建立者"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_call_log__create_date
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__create_date
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_job__create_date
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_push_key_wizard__create_date
+msgid "Created on"
+msgstr "建立於"
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid "Current Push Key"
+msgstr "目前的推送金鑰"
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid "Debug"
+msgstr "除錯"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_contact__log_payload
+msgid ""
+"Debugging only: store the request and response content in the call logs. "
+"They contain private conversations. Turning it off erases stored content."
+msgstr "僅供除錯：在呼叫紀錄中儲存請求與回應內容。內容包含私人對話；關閉後會清除已儲存的內容。"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__description
+msgid "Description"
+msgstr "說明"
+
+#. module: woow_ai_contact
+#: model:ir.model,name:woow_ai_contact.model_discuss_channel
+msgid "Discussion Channel"
+msgstr "討論頻道"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_call_log__display_name
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__display_name
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_job__display_name
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_push_key_wizard__display_name
+msgid "Display Name"
+msgstr "顯示名稱"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields.selection,name:woow_ai_contact.selection__woow_ai_job__state__done
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_push_key_wizard_form
+msgid "Done"
+msgstr "完成"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__download_domains
+msgid "Download Domains"
+msgstr "下載網域白名單"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_call_log__duration_ms
+msgid "Duration (ms)"
+msgstr "耗時（毫秒）"
+
+#. module: woow_ai_contact
+#: model:ir.model.constraint,message:woow_ai_contact.constraint_woow_ai_contact_partner_uniq
+msgid "Each bot partner can belong to one AI contact only."
+msgstr "每個機器人聯絡人只能屬於一個 AI 聯絡人。"
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid "Empty: Sorry, I cannot answer right now. Please try again later."
+msgstr "留空：抱歉，我現在無法回覆，請稍後再試。"
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid "Empty: backend default"
+msgstr "留空：使用後端預設"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__endpoint_url
+msgid "Endpoint URL"
+msgstr "後端網址"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_call_log__error
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_job__error
+#: model:ir.model.fields.selection,name:woow_ai_contact.selection__woow_ai_call_log__status__error
+msgid "Error"
+msgstr "錯誤"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__error_message
+msgid "Error Message"
+msgstr "錯誤訊息"
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_call_log_search
+msgid "Errors"
+msgstr "錯誤"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields.selection,name:woow_ai_contact.selection__woow_ai_job__state__failed
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_job_search
+msgid "Failed"
+msgstr "失敗"
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid "Files"
+msgstr "檔案"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_contact__download_domains
+msgid ""
+"Files linked in AI replies are downloaded and attached only from these "
+"hosts. One per line: an exact host name or *.example.com."
+msgstr "AI 回覆中連結的檔案只有來自這些主機才會下載並附加。每行一個：完整主機名稱或 *.example.com。"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_job__finished_at
+msgid "Finished"
+msgstr "完成時間"
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid "Generate Push Key"
+msgstr "產生推送金鑰"
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_call_log_search
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_search
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_job_search
+msgid "Group By"
+msgstr "分組依據"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields.selection,name:woow_ai_contact.selection__woow_ai_call_log__status__http_error
+msgid "HTTP Error"
+msgstr "HTTP 錯誤"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_call_log__http_status
+msgid "HTTP Status"
+msgstr "HTTP 狀態碼"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_job__context_message_id
+msgid "Highest message id sent to the backend as conversation"
+msgstr "作為對話內容送給後端的最新訊息 ID"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__max_history
+msgid "History Messages"
+msgstr "歷史訊息數"
+
+#. module: woow_ai_contact
+#. odoo-python
+#: code:addons/woow_ai_contact/models/ai_contact.py:0
+msgid "History messages must be between 1 and 200."
+msgstr "歷史訊息數必須介於 1 到 200 之間。"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_job__run_count
+msgid "How many times processing of this job started (at most 3)"
+msgstr "這個工作開始處理的次數（最多 3 次）"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields.selection,name:woow_ai_contact.selection__woow_ai_job__kind__handoff
+msgid "Human Handoff"
+msgstr "轉真人"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_call_log__id
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__id
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_job__id
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_push_key_wizard__id
+msgid "ID"
+msgstr "ID"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__image_1920
+msgid "Image"
+msgstr "圖片"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__image_1024
+msgid "Image 1024"
+msgstr "圖片 1024"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__image_128
+msgid "Image 128"
+msgstr "圖片 128"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__image_256
+msgid "Image 256"
+msgstr "圖片 256"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__image_512
+msgid "Image 512"
+msgstr "圖片 512"
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid ""
+"Images and file links in AI replies are downloaded and attached to the message only\n"
+"                                from these hosts; other links stay links."
+msgstr "AI 回覆中的圖片與檔案連結，只有來自這些主機才會下載並附加到訊息；其他連結維持連結。"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields.selection,name:woow_ai_contact.selection__woow_ai_call_log__status__invalid_response
+msgid "Invalid Response"
+msgstr "回應格式錯誤"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_call_log__job_id
+msgid "Job"
+msgstr "工作"
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_list
+msgid "Key Set"
+msgstr "已設定金鑰"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_job__context_message_id
+msgid "Last Message In Context"
+msgstr "上下文最後一則訊息"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_call_log__write_uid
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__write_uid
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_job__write_uid
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_push_key_wizard__write_uid
+msgid "Last Updated by"
+msgstr "最後更新者"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_call_log__write_date
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__write_date
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_job__write_date
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_push_key_wizard__write_date
+msgid "Last Updated on"
+msgstr "最後更新於"
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid "Leave empty to keep the current key"
+msgstr "留空則保留目前的金鑰"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_contact__api_key
+msgid ""
+"Leave empty to keep the current key. The saved key is never shown again."
+msgstr "留空則保留目前的金鑰。已儲存的金鑰不會再顯示。"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__log_payload
+msgid "Log Request Content"
+msgstr "記錄請求內容"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__max_download_mb
+msgid "Max File Size (MB)"
+msgstr "檔案大小上限（MB）"
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid "Messages"
+msgstr "訊息"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__model
+msgid "Model"
+msgstr "模型"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_contact__max_history
+msgid "Most recent messages sent as context (1-200)."
+msgstr "作為上下文送出的最近訊息數（1–200）。"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__name
+msgid "Name"
+msgstr "名稱"
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.portal_my_ai_contacts
+msgid "No AI contact is available to you yet."
+msgstr "目前還沒有可以使用的 AI 聯絡人。"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields.selection,name:woow_ai_contact.selection__woow_ai_call_log__status__ok
+msgid "OK"
+msgstr "成功"
+
+#. module: woow_ai_contact
+#. odoo-python
+#: code:addons/woow_ai_contact/models/ai_contact.py:0
+msgid "Only system administrators can change AI contact connections."
+msgstr "只有系統管理員可以變更 AI 聯絡人的連線設定。"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields.selection,name:woow_ai_contact.selection__woow_ai_call_log__backend_type__openai
+msgid "OpenAI compatible"
+msgstr "OpenAI 相容"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields.selection,name:woow_ai_contact.selection__woow_ai_contact__backend_type__openai
+msgid "OpenAI compatible (Hermes, LiteLLM)"
+msgstr "OpenAI 相容（Hermes、LiteLLM）"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_contact__model
+msgid ""
+"OpenAI compatible backends only. Leave empty to use the backend default."
+msgstr "僅限 OpenAI 相容後端。留空則使用後端預設模型。"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_contact__endpoint_url
+msgid ""
+"OpenAI compatible: the base URL ending in /v1 (…/chat/completions is added)."
+" n8n: the full webhook URL. Must be https, except localhost and "
+"*.svc.cluster.local."
+msgstr "OpenAI 相容：以 /v1 結尾的基本網址（系統會加上 …/chat/completions）。n8n：完整的 webhook 網址。必須使用 https（localhost 與 *.svc.cluster.local 例外）。"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_contact__system_prompt
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid "Optional. Leave empty to let the backend decide the role."
+msgstr "選填。留空則完全由後端決定角色。"
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid ""
+"POST /woow_ai/v1/push with \"Authorization: Bearer &lt;push key&gt;\" lets a backend send\n"
+"                                a message to a user as this AI contact. The key is shown once when generated; only its\n"
+"                                hash is stored. See docs/PROTOCOL.md."
+msgstr "後端以 \"Authorization: Bearer &lt;推送金鑰&gt;\" 呼叫 POST /woow_ai/v1/push，即可用這個 AI 聯絡人的身分傳訊息給使用者。金鑰只在產生時顯示一次，系統只儲存雜湊值。詳見 docs/PROTOCOL.md。"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_contact__partner_id
+msgid ""
+"Partner the AI posts as. Created automatically; name and avatar follow the "
+"AI contact."
+msgstr "AI 發訊時使用的聯絡人。自動建立，名稱與頭像跟隨 AI 聯絡人。"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields.selection,name:woow_ai_contact.selection__woow_ai_job__state__pending
+msgid "Pending"
+msgstr "等待中"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_contact__welcome_message
+msgid ""
+"Posted by the AI when a user opens the conversation for the first time."
+msgstr "使用者第一次開啟對話時，AI 會送出這段招呼語。"
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid "Posted when a user opens the chat for the first time (markdown)"
+msgstr "使用者第一次開啟對話時送出（可用 markdown）"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_contact__error_message
+msgid "Posted when the backend fails. Empty: a default message."
+msgstr "後端失敗時送出。留空則使用預設訊息。"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields.selection,name:woow_ai_contact.selection__woow_ai_call_log__backend_type__push
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid "Push API"
+msgstr "推送 API"
+
+#. module: woow_ai_contact
+#. odoo-python
+#: code:addons/woow_ai_contact/models/ai_contact.py:0
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__push_key_hint
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_push_key_wizard__push_key
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_list
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_push_key_wizard_form
+msgid "Push Key"
+msgstr "推送金鑰"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__push_key_hash
+msgid "Push Key Hash"
+msgstr "推送金鑰雜湊"
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid "Remove API Key"
+msgstr "移除 API 金鑰"
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid "Remove the saved backend API key?"
+msgstr "要移除已儲存的後端 API 金鑰嗎？"
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_job_form
+msgid "Reply Job"
+msgstr "回覆工作"
+
+#. module: woow_ai_contact
+#: model:ir.actions.act_window,name:woow_ai_contact.action_woow_ai_job
+#: model:ir.ui.menu,name:woow_ai_contact.menu_woow_ai_job
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_job_list
+msgid "Reply Jobs"
+msgstr "回覆工作"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_job__reply_message_id
+msgid "Reply Message"
+msgstr "回覆訊息"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_call_log__request_payload
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_call_log_form
+msgid "Request Content"
+msgstr "請求內容"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_call_log__response_payload
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_call_log_form
+msgid "Response Content"
+msgstr "回應內容"
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid "Revoke Push Key"
+msgstr "撤銷推送金鑰"
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid "Revoke the push key? Pushes with it will be refused."
+msgstr "要撤銷推送金鑰嗎？之後使用它的推送都會被拒絕。"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_job__run_after
+msgid "Run After"
+msgstr "最早執行時間"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields.selection,name:woow_ai_contact.selection__woow_ai_job__state__running
+msgid "Running"
+msgstr "處理中"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_job__run_count
+msgid "Runs"
+msgstr "執行次數"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__sequence
+msgid "Sequence"
+msgstr "排序"
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid "Shown to users in the AI contact lists"
+msgstr "顯示在使用者的 AI 聯絡人清單中"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_contact__description
+msgid "Shown to users in the AI contact lists."
+msgstr "顯示在使用者的 AI 聯絡人清單中。"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields.selection,name:woow_ai_contact.selection__woow_ai_job__state__skipped
+msgid "Skipped"
+msgstr "已略過"
+
+#. module: woow_ai_contact
+#. odoo-python
+#: code:addons/woow_ai_contact/models/ai_job.py:0
+msgid "Sorry, I cannot answer right now. Please try again later."
+msgstr "抱歉，我現在無法回覆，請稍後再試。"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_job__started_at
+msgid "Started"
+msgstr "開始時間"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_call_log__status
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_job__state
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_call_log_search
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_job_search
+msgid "Status"
+msgstr "狀態"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__system_prompt
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid "System Prompt"
+msgstr "系統提示詞"
+
+#. module: woow_ai_contact
+#. odoo-python
+#: code:addons/woow_ai_contact/models/ai_contact.py:0
+msgid "The bot partner of an AI contact cannot be a user."
+msgstr "AI 聯絡人的機器人聯絡人不能是系統使用者。"
+
+#. module: woow_ai_contact
+#. odoo-python
+#: code:addons/woow_ai_contact/models/ai_contact.py:0
+msgid ""
+"The endpoint URL must use https (plain http is only allowed for localhost "
+"and *.svc.cluster.local)."
+msgstr "後端網址必須使用 https（只有 localhost 與 *.svc.cluster.local 可用 http）。"
+
+#. module: woow_ai_contact
+#. odoo-python
+#: code:addons/woow_ai_contact/models/ai_contact.py:0
+msgid "The maximum file size must be between 1 and 100 MB."
+msgstr "檔案大小上限必須介於 1 到 100 MB 之間。"
+
+#. module: woow_ai_contact
+#. odoo-python
+#: code:addons/woow_ai_contact/models/ai_contact.py:0
+msgid "The timeout must be between 5 and 3600 seconds."
+msgstr "逾時秒數必須介於 5 到 3600 秒之間。"
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_call_log_form
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_call_log_list
+msgid "Time"
+msgstr "時間"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields.selection,name:woow_ai_contact.selection__woow_ai_call_log__status__timeout
+msgid "Timeout"
+msgstr "逾時"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__timeout_seconds
+msgid "Timeout (seconds)"
+msgstr "逾時（秒）"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_job__message_id
+msgid "Trigger Message"
+msgstr "觸發訊息"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_job__kind
+msgid "Type"
+msgstr "類型"
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_job_search
+msgid "Unfinished"
+msgstr "未完成"
+
+#. module: woow_ai_contact
+#: model_terms:ir.actions.act_window,help:woow_ai_contact.action_woow_ai_contact
+msgid ""
+"Users chat with AI contacts in Discuss; each one is connected to an OpenAI compatible backend\n"
+"                (Hermes, LiteLLM) or an n8n webhook."
+msgstr "使用者在 Discuss 與 AI 聯絡人一對一對話；每個 AI 聯絡人連接一個 OpenAI 相容後端（Hermes、LiteLLM）或 n8n webhook。"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_contact__allowed_group_ids
+msgid "Users in one of these groups can chat with this AI contact."
+msgstr "屬於這些群組之一的使用者可以和這個 AI 聯絡人對話。"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__welcome_message
+msgid "Welcome Message"
+msgstr "招呼語"
+
+#. module: woow_ai_contact
+#. odoo-python
+#: code:addons/woow_ai_contact/models/discuss_channel.py:0
+msgid "You do not have permission to use this AI contact."
+msgstr "您沒有使用這個 AI 聯絡人的權限。"
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid "e.g. Product Advisor"
+msgstr "例如：產品顧問"
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid ""
+"files.example.com\n"
+"*.cdn.example.com"
+msgstr "files.example.com\n*.cdn.example.com"
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid "https://litellm.example.com/v1 or https://n8n.example.com/webhook/…"
+msgstr "https://litellm.example.com/v1 或 https://n8n.example.com/webhook/…"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields.selection,name:woow_ai_contact.selection__woow_ai_call_log__backend_type__n8n
+#: model:ir.model.fields.selection,name:woow_ai_contact.selection__woow_ai_contact__backend_type__n8n
+msgid "n8n webhook"
+msgstr "n8n webhook"
