@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 import base64
+import io
+import zipfile
 from unittest.mock import patch
 
 from odoo.tests.common import BaseCase, tagged
@@ -7,6 +9,18 @@ from odoo.tests.common import BaseCase, tagged
 from odoo.addons.woow_ai_contact.tools import media
 
 from .common import MEDIA_GET, TINY_PDF, TINY_PNG, http_response
+
+
+def ooxml(main_part):
+    """Minimal OOXML package (enough for content sniffing)."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, 'w') as package:
+        package.writestr('[Content_Types].xml',
+                         '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/'
+                         'content-types"/>')
+        package.writestr('_rels/.rels', '<?xml version="1.0"?><Relationships/>')
+        package.writestr(main_part, '<?xml version="1.0"?><root/>')
+    return buffer.getvalue()
 
 
 @tagged('woow_ai_contact')
@@ -23,6 +37,25 @@ class TestMedia(BaseCase):
         self.assertFalse(media.url_allowed('https://evilfiles.example.com/a.png', self.domains))
         self.assertFalse(media.url_allowed('ftp://files.example.com/a.png', self.domains))
         self.assertFalse(media.url_allowed('https://user@evil.com/a.png', self.domains))
+
+    def test_plain_http_only_internal(self):
+        domains = media.parse_domains('files.example.com\nlocalhost\nmock.ns.svc.cluster.local')
+        self.assertFalse(media.url_allowed('http://files.example.com/a.png', domains))
+        self.assertTrue(media.url_allowed('https://files.example.com/a.png', domains))
+        self.assertTrue(media.url_allowed('http://localhost:18080/a.png', domains))
+        self.assertTrue(media.url_allowed('http://mock.ns.svc.cluster.local/a.png', domains))
+        # internal but not allowlisted
+        self.assertFalse(media.url_allowed('http://other.ns.svc.cluster.local/a.png', domains))
+        with patch(MEDIA_GET) as get:
+            with self.assertRaises(media.DownloadRefused):
+                media.download('http://files.example.com/a.png', domains, 1000)
+        get.assert_not_called()
+        # a redirect from https to plain http is refused too
+        redirect = http_response(302, headers={'Location': 'http://files.example.com/b.png'})
+        with patch(MEDIA_GET, return_value=redirect) as get:
+            with self.assertRaises(media.DownloadRefused):
+                media.download('https://files.example.com/a.png', domains, 1000)
+        self.assertEqual(get.call_count, 1)
 
     def test_download_ok(self):
         with patch(MEDIA_GET, return_value=http_response(200, chunks=[TINY_PNG[:10], TINY_PNG[10:]])) as get:
@@ -72,6 +105,27 @@ class TestMedia(BaseCase):
                          'application/octet-stream')
         self.assertEqual(media.safe_mimetype(b'<svg xmlns="http://www.w3.org/2000/svg" onload="x()"></svg>'),
                          'application/octet-stream')
+        self.assertEqual(media.safe_mimetype(b'<?xml version="1.0"?><root/>'), 'application/octet-stream')
+
+    def test_active_types_exact(self):
+        for mimetype in ('text/html', 'application/xhtml+xml', 'image/svg+xml', 'text/xml', 'application/xml',
+                         'application/rss+xml', 'text/javascript', 'application/javascript',
+                         'application/ecmascript', 'TEXT/HTML; charset=utf-8'):
+            self.assertTrue(media.is_active_type(mimetype), mimetype)
+        for mimetype in ('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                         'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                         'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                         'application/pdf', 'image/png', 'text/csv', 'application/zip'):
+            self.assertFalse(media.is_active_type(mimetype), mimetype)
+
+    def test_ooxml_types_kept(self):
+        expected = {
+            'xl/workbook.xml': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'word/document.xml': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'ppt/presentation.xml': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        }
+        for part, mimetype in expected.items():
+            self.assertEqual(media.safe_mimetype(ooxml(part)), mimetype, part)
 
     def test_base64(self):
         data = base64.b64encode(TINY_PNG).decode()

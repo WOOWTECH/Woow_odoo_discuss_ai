@@ -72,3 +72,24 @@ class TestMarkdown(BaseCase):
     def test_empty(self):
         self.assertEqual(self.html(''), '')
         self.assertEqual(self.html('   \n '), '')
+
+    def test_link_hosts(self):
+        text = ('[shop](https://shop.example.com/p) [cdn](https://a.cdn.example.com/x) '
+                '[evil](https://evil.example.net/login) https://evil.example.net/bare '
+                '<mailto:a@example.com> ![img](https://shop.example.com/i.png)')
+        # default: every safe link
+        self.assertEqual(self.html(text).count('<a '), 6)
+        html = str(markdown_to_html(text, link_hosts=['shop.example.com', '*.cdn.example.com']))
+        self.assertEqual(html.count('<a '), 3)
+        self.assertIn('href="https://shop.example.com/p"', html)
+        self.assertIn('href="https://a.cdn.example.com/x"', html)
+        self.assertNotIn('href="https://evil.example.net', html)
+        self.assertNotIn('href="mailto:', html)
+        self.assertIn('evil', html)  # the label stays as text
+        # the same text in a table cell
+        table = str(markdown_to_html('| a |\n|---|\n| [x](https://evil.example.net) |', link_hosts=[]))
+        self.assertNotIn('<a ', table)
+        # string allowlist (download-domain syntax) and the hook default afterwards
+        self.assertEqual(str(markdown_to_html('[s](https://shop.example.com)', link_hosts='shop.example.com'))
+                         .count('<a '), 1)
+        self.assertEqual(self.html('[e](https://evil.example.net)').count('<a '), 1)

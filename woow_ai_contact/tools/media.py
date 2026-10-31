@@ -3,7 +3,7 @@
 
 - domain allowlist matching (``host`` or ``*.example.com`` per line)
 - bounded download of files linked in AI replies (no redirect outside the
-  allowlist, streamed with a size cap)
+  allowlist, streamed with a size cap; plain http only to internal hosts)
 - mimetype from the content, never from the backend; active types forced to
   ``application/octet-stream``
 - signed, expiring download URLs for user attachments
@@ -41,7 +41,18 @@ FILE_EXTENSIONS = (
     'xlsx', 'xls', 'csv', 'docx', 'pptx', 'zip',
 )
 
-_ACTIVE_TYPE_MARKERS = ('html', 'svg', 'javascript', 'ecmascript', 'xml')
+# Types a browser may execute or render as a document: stored as
+# application/octet-stream. Exact names (plus any "+xml" suffix): a substring
+# test on "xml" would also hit the OOXML office types (xlsx, docx, pptx).
+ACTIVE_TYPES = frozenset((
+    'text/html', 'application/xhtml+xml', 'image/svg+xml', 'text/xml', 'application/xml',
+    'text/javascript', 'application/javascript', 'application/x-javascript',
+    'text/ecmascript', 'application/ecmascript',
+))
+
+# Hosts reachable with plain http (in-cluster / local services only)
+PLAIN_HTTP_HOSTS = ('localhost', '127.0.0.1', '::1')
+PLAIN_HTTP_SUFFIXES = ('.svc.cluster.local',)
 
 
 class DownloadRefused(Exception):
@@ -84,12 +95,23 @@ def host_allowed(host, domains):
     return False
 
 
+def is_internal_host(host):
+    """localhost or an in-cluster ``*.svc.cluster.local`` host."""
+    host = (host or '').lower().rstrip('.')
+    return bool(host) and (host in PLAIN_HTTP_HOSTS or host.endswith(PLAIN_HTTP_SUFFIXES))
+
+
 def url_allowed(url, domains):
+    """https to an allowlisted host; plain http only to an allowlisted internal host."""
     try:
         parts = urlsplit(url)
     except ValueError:
         return False
-    return parts.scheme in ('http', 'https') and host_allowed(parts.hostname, domains)
+    if not host_allowed(parts.hostname, domains):
+        return False
+    if parts.scheme == 'https':
+        return True
+    return parts.scheme == 'http' and is_internal_host(parts.hostname)
 
 
 def looks_like_file(url):
@@ -102,11 +124,22 @@ def looks_like_file(url):
     return ext in FILE_EXTENSIONS
 
 
+def is_active_type(mimetype):
+    mimetype = (mimetype or '').split(';')[0].strip().lower()
+    return mimetype in ACTIVE_TYPES or mimetype.endswith('+xml') or 'javascript' in mimetype \
+        or 'ecmascript' in mimetype
+
+
+def sniff_mimetype(data):
+    """Mimetype guessed from the content only (lowercase, no parameters)."""
+    mimetype = guess_mimetype(data or b'', default='application/octet-stream') or 'application/octet-stream'
+    return mimetype.split(';')[0].strip().lower()
+
+
 def safe_mimetype(data):
     """Mimetype sniffed from the content; active content becomes octet-stream."""
-    mimetype = guess_mimetype(data or b'', default='application/octet-stream') or 'application/octet-stream'
-    mimetype = mimetype.split(';')[0].strip().lower()
-    if any(marker in mimetype for marker in _ACTIVE_TYPE_MARKERS):
+    mimetype = sniff_mimetype(data)
+    if is_active_type(mimetype):
         return 'application/octet-stream'
     return mimetype
 

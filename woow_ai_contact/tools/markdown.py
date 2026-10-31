@@ -17,16 +17,20 @@ Supported (enough for chat replies, see docs/DESIGN.md "回覆呈現"):
   (``blockquote``/``hr`` would be folded by Discuss as mail quotes)
 - links ``[text](url)``, images ``![alt](url)`` (rendered as links: files are
   attached separately) and bare URLs; only http, https and mailto URLs are
-  ever turned into links
+  ever turned into links; with ``link_hosts`` only http(s) links to those
+  hosts (``host`` or ``*.example.com``) stay links, the rest is plain text
 - GFM tables (``| a | b |`` + ``|---|:-:|``), rendered as
   ``<table class="table table-sm table-bordered">``
 """
 
 import re
+from contextvars import ContextVar
 
 from markupsafe import Markup, escape
 
 from odoo.tools import html_sanitize
+
+from .media import host_allowed, parse_domains, url_host
 
 ALLOWED_SCHEMES = ('http://', 'https://', 'mailto:')
 MAX_INPUT_LENGTH = 100000  # characters; longer replies are cut (with a marker)
@@ -53,6 +57,9 @@ _STRIKE_RE = re.compile(r'~~(?=\S)(.+?)(?<=\S)~~')
 
 _LINK_MARKUP = Markup('<a href="%s" target="_blank" rel="noopener noreferrer">%s</a>')
 
+# Allowed link hosts of the reply being rendered (None: every safe URL)
+_LINK_HOSTS = ContextVar('woow_ai_link_hosts', default=None)
+
 
 def safe_url(url):
     """Return the URL when its scheme is allowed (http, https, mailto), else None."""
@@ -72,9 +79,16 @@ def _emphasis(escaped):
     return Markup(text)
 
 
+def _link_allowed(url):
+    hosts = _LINK_HOSTS.get()
+    if hosts is None:
+        return True
+    return url.lower().startswith(('http://', 'https://')) and host_allowed(url_host(url), hosts)
+
+
 def _link(url, label):
     url = safe_url(url)
-    if not url:
+    if not url or not _link_allowed(url):
         return _emphasis(escape(label))
     return _LINK_MARKUP % (url, _emphasis(escape(label)))
 
@@ -295,12 +309,28 @@ def _render_blocks(lines):
     return Markup('').join(out)
 
 
-def markdown_to_html(text):
-    """Markdown subset -> sanitized HTML (Markup). Empty input -> empty Markup."""
+def markdown_to_html(text, link_hosts=None):
+    """Markdown subset -> sanitized HTML (Markup). Empty input -> empty Markup.
+
+    Args:
+        text (str): markdown
+        link_hosts (list|str|None): None keeps every http/https/mailto link;
+            otherwise only http(s) links whose host matches one entry (exact
+            host or ``*.example.com``, same syntax as the download domains)
+            become ``<a>``, other links are rendered as their text
+    """
     text = (text or '').replace('\r\n', '\n').replace('\r', '\n')
     if len(text) > MAX_INPUT_LENGTH:
         text = text[:MAX_INPUT_LENGTH] + '\n\n…'
     if not text.strip():
         return Markup('')
-    html = _render_blocks(text.split('\n'))
+    if isinstance(link_hosts, str):
+        link_hosts = parse_domains(link_hosts)
+    elif link_hosts is not None:
+        link_hosts = [host.lower().rstrip('.') for host in link_hosts if host]
+    token = _LINK_HOSTS.set(link_hosts)
+    try:
+        html = _render_blocks(text.split('\n'))
+    finally:
+        _LINK_HOSTS.reset(token)
     return Markup(html_sanitize(html, sanitize_attributes=True, sanitize_style=True))
