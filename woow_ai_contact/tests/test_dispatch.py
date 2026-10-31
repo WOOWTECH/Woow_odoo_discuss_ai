@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 """Dispatcher: replies run in the cron process (owner decision 29)."""
 
+import json
+import os
+import signal
 import threading
 import time
 from contextlib import nullcontext
@@ -15,7 +18,7 @@ from odoo.tools import config, mute_logger
 
 from odoo.addons.woow_ai_contact.models import ai_job
 from odoo.addons.woow_ai_contact.models.ai_job import LOCK_NAMESPACE
-from odoo.addons.woow_ai_contact.tools.dispatcher import BUSY, Dispatcher
+from odoo.addons.woow_ai_contact.tools.dispatcher import BUSY, FAILED, Dispatcher
 
 from .common import BACKEND_POST, AiContactCase, openai_ok, refused
 
@@ -47,7 +50,7 @@ class Units:
             later = [self.due_at[k] - now for k in self.pending if k not in exclude and self.due_at.get(k, 0) > now]
         return due[:limit], (min(later) if later else None)
 
-    def run(self, key):
+    def run(self, key, may_continue=None):
         with self.lock:
             self.active += 1
             self.max_active = max(self.max_active, self.active)
@@ -56,7 +59,7 @@ class Units:
         with self.lock:
             self.active -= 1
             result = self.results.pop(key, None)
-            if result != BUSY and key in self.pending:
+            if result not in (BUSY, FAILED) and key in self.pending:
                 self.pending.remove(key)
             self.ended.append(key)
         return result
@@ -144,7 +147,7 @@ class TestDispatcherLoop(BaseCase):
         units = Units(['bad', 'good'], seconds=0.05)
         original = units.run
 
-        def run(key):
+        def run(key, may_continue=None):
             if key == 'bad':
                 units.pending.remove('bad')
                 raise RuntimeError('boom')
@@ -153,6 +156,86 @@ class TestDispatcherLoop(BaseCase):
         stats = Dispatcher(units.fetch, run, concurrency=2, budget=30, poll_interval=0.05).run()
         self.assertEqual(stats['started'], 2)
         self.assertIn('good', units.ended)
+
+    @mute_logger('odoo.addons.woow_ai_contact.tools.dispatcher')
+    def test_failing_unit_is_backed_off(self):
+        """Review: a unit that raises while fetch keeps returning it was
+        restarted at once (17321 runs in 3 s); now it is backed off,
+        doubling, like BUSY."""
+        runs = []
+
+        def run(key, may_continue=None):
+            runs.append(time.monotonic())
+            raise RuntimeError('pool exhausted')
+
+        d = Dispatcher(lambda exclude, limit: ([k for k in ['x'] if k not in exclude][:limit], None), run,
+                       budget=1.0, poll_interval=0.05, idle_wait=2, busy_retry=0.1, max_backoff=0.4)
+        stats = d.run()
+        # 0, +0.1, +0.3, +0.7 (capped 0.4 steps) within the 1 s window: a handful, not thousands
+        self.assertLessEqual(len(runs), 6)
+        self.assertGreaterEqual(len(runs), 2)
+        self.assertEqual(stats['failed'], len(runs))
+        self.assertLess(stats['fetches'], 40)
+        gaps = [b - a for a, b in zip(runs, runs[1:])]
+        self.assertTrue(all(g >= 0.09 for g in gaps), gaps)
+        if len(gaps) >= 2:
+            self.assertGreater(gaps[1], gaps[0])  # doubling
+
+    def test_failed_result_is_backed_off(self):
+        units = Units(['y'], seconds=0.01, results={'y': FAILED})
+        stats = self.dispatcher(units, budget=30, idle_wait=2, busy_retry=0.3, poll_interval=0.2).run()
+        self.assertEqual(units.started, ['y', 'y'])
+        self.assertGreater(units.fetches[-1] - units.fetches[0], 0.25)
+        self.assertEqual(stats['failed'], 1)
+
+    @mute_logger('odoo.addons.woow_ai_contact.tools.dispatcher')
+    def test_fetch_error_does_not_fail_the_pass(self):
+        calls = []
+
+        def fetch(exclude, limit):
+            calls.append(1)
+            raise RuntimeError('database went away')
+        stats = Dispatcher(fetch, lambda key, may_continue=None: None, budget=30, poll_interval=0.05).run()
+        self.assertEqual(stats['fetch_errors'], 2)  # the first and the final fetch, no loop
+        self.assertEqual(stats['started'], 0)
+        self.assertIsNone(stats['retrigger_in'])
+
+    def test_unit_does_not_chain_past_the_window(self):
+        """Review: a unit chained up to 20 jobs whatever the window; the
+        budget formula assumes no backend call starts after it."""
+        seen = {}
+
+        def run(key, may_continue):
+            seen['during'] = may_continue()
+            time.sleep(0.4)  # the "reply" outlives the 0.2 s window
+            seen['after'] = may_continue()
+            return None
+        stats = Dispatcher(lambda exclude, limit: ([k for k in ['c'] if k not in exclude and 'after' not in seen],
+                                                   None),
+                           run, budget=0.2, poll_interval=0.05).run()
+        self.assertEqual((seen['during'], seen['after']), (True, False))
+        self.assertEqual(stats['started'], 1)
+
+    def test_stop_signal_stops_claiming(self):
+        """Review: after SIGTERM the pass kept claiming new work."""
+        units = Units(range(6), seconds=0.2)
+        stop = threading.Event()
+        seen = []
+
+        def run(key, may_continue):
+            stop.set()  # the stop signal arrives while the first replies run
+            seen.append(may_continue())
+            return units.run(key)
+        d = Dispatcher(units.fetch, run, concurrency=2, budget=30, poll_interval=0.05, should_stop=stop.is_set,
+                       name='test.dispatch.stop')
+        stats = d.run()
+        self.assertEqual(stats['started'], 2)  # the first batch only
+        self.assertTrue(stats['stopped'])
+        self.assertFalse(stats['budget_reached'])
+        self.assertEqual(seen, [False, False])  # no chaining either
+        self.assertFalse(alive_unit_threads(d.name))
+        stop_now = Dispatcher(units.fetch, run, budget=30, should_stop=lambda: True).run()
+        self.assertEqual(stop_now['started'], 0)
 
 
 @tagged('woow_ai_contact')
@@ -227,19 +310,25 @@ class TestDispatchModel(AiContactCase):
                 # threaded: 0 falls back to limit_time_real, and no idle sleep to reserve
                 info = Job._compute_job_runner()
                 self.assertEqual((info['cron_limit'], info['required'], info['mode']), (400, 360, 'cron'))
-            # no cron thread here: fallback, unless another process ran the dispatcher recently
+            # no cron thread here: fallback, unless a cron process reported recently
+            self.env.cr.execute("DELETE FROM ir_config_parameter WHERE key = %s", (ai_job.STATE_PARAM,))
             with patch.dict(config.options, {'max_cron_threads': 0}):
-                cron.write({'lastcall': fields.Datetime.now() - timedelta(hours=1)})
-                self.env.flush_all()
                 info = Job._compute_job_runner()
                 self.assertEqual((info['mode'], info['reason']), ('thread', 'no_cron_runner'))
-                cron.write({'lastcall': fields.Datetime.now() - timedelta(minutes=2)})
-                self.env.flush_all()
+                self.report_state({'workers': 0, 'max_cron_threads': 2, 'limit_time_real_cron': 1800})
+                self.set_state_age(timedelta(hours=1))
+                self.assertEqual(Job._compute_job_runner()['reason'], 'no_cron_runner')  # stale
+                self.set_state_age(timedelta(minutes=2))
                 info = Job._compute_job_runner()
                 self.assertEqual((info['mode'], info['cron_runner']), ('cron', 'other process'))
-            with patch.dict(config.options, {'stop_after_init': True}):
-                cron.write({'lastcall': False})
+                self.assertEqual((info['server'], info['cron_limit'], info['required']), ('threaded', 1800, 360))
+                cron.active = False
                 self.env.flush_all()
+                self.assertEqual(Job._compute_job_runner()['reason'], 'no_cron_runner')
+                cron.active = True
+                self.env.flush_all()
+            with patch.dict(config.options, {'stop_after_init': True}):
+                self.env.cr.execute("DELETE FROM ir_config_parameter WHERE key = %s", (ai_job.STATE_PARAM,))
                 self.assertEqual(Job._compute_job_runner()['reason'], 'no_cron_runner')
             ICP.set_param('woow_ai_contact.job_runner', 'thread')
             self.assertEqual(Job._compute_job_runner()['reason'], 'forced_thread')
@@ -247,6 +336,99 @@ class TestDispatchModel(AiContactCase):
         ICP.set_param('woow_ai_contact.job_runner', 'auto')
         with patch.dict(config.options, base):
             self.assertEqual(Job._compute_job_runner()['mode'], 'thread')
+
+    def report_state(self, options):
+        """A cron process with these config options reports its view."""
+        with patch.dict(config.options, dict({'db_name': self.env.cr.dbname}, **options)):
+            ai_job._report_runner_state(self.env.cr)
+
+    def set_state_age(self, age):
+        self.env.cr.execute("""UPDATE ir_config_parameter SET write_date = (now() AT TIME ZONE 'UTC') - %s
+                               WHERE key = %s""", (age, ai_job.STATE_PARAM))
+
+    def test_web_process_follows_the_cron_process(self):
+        """Review: with the platform topology (web pod prefork without cron
+        threads, cron pod threaded), the web pod judged the mode from its own
+        config: same settings, cron in the cron pod but thread in the web pod."""
+        Job = self.Job
+        self.contact.timeout_seconds = 300
+        self.n8n.timeout_seconds = 60
+        settings = {'limit_time_real': 120, 'limit_time_real_cron': 400, 'stop_after_init': False}
+        with patch.object(odoo_module, 'current_test', None):
+            with patch.dict(config.options, dict(settings, workers=0, max_cron_threads=2)):
+                cron_pod = Job._compute_job_runner()
+                self.report_state(dict(settings, workers=0, max_cron_threads=2))
+            with patch.dict(config.options, dict(settings, workers=2, max_cron_threads=0)):
+                web_pod = Job._compute_job_runner()
+            with patch.dict(config.options, dict(settings, workers=2, max_cron_threads=0,
+                                                 limit_time_real_cron=-1)):  # chart default here
+                web_pod_default = Job._compute_job_runner()
+        self.assertEqual((cron_pod['mode'], cron_pod['reason'], cron_pod['required']), ('cron', 'cron_runner', 360))
+        for info in (web_pod, web_pod_default):
+            self.assertEqual((info['mode'], info['reason'], info['cron_runner']),
+                             ('cron', 'cron_runner', 'other process'))
+            self.assertEqual((info['server'], info['cron_limit'], info['required']), ('threaded', 400, 360))
+            self.assertFalse(info['shared'])
+        # a cron pod whose limit is too short: the web pod falls back too, and says why
+        with patch.object(odoo_module, 'current_test', None):
+            self.report_state(dict(settings, workers=0, max_cron_threads=2, limit_time_real_cron=300))
+            with patch.dict(config.options, dict(settings, workers=2, max_cron_threads=0)):
+                info = Job._compute_job_runner()
+        self.assertEqual((info['mode'], info['reason'], info['cron_limit']), ('thread', 'cron_limit_too_low', 300))
+        # garbage in the report: no runner
+        self.env.cr.execute("UPDATE ir_config_parameter SET value = 'x' WHERE key = %s", (ai_job.STATE_PARAM,))
+        with patch.object(odoo_module, 'current_test', None), \
+                patch.dict(config.options, dict(settings, workers=2, max_cron_threads=0)):
+            self.assertEqual(Job._compute_job_runner()['reason'], 'no_cron_runner')
+
+    def test_state_is_reported_and_refreshed(self):
+        db = self.env.cr.dbname
+        self.env.cr.execute("DELETE FROM ir_config_parameter WHERE key = %s", (ai_job.STATE_PARAM,))
+        with patch.dict(config.options, {'workers': 2, 'max_cron_threads': 1, 'db_name': 'a,b',
+                                         'limit_time_real': 120, 'limit_time_real_cron': 600}):
+            ai_job._report_runner_state(self.env.cr)
+        self.env.cr.execute("SELECT value FROM ir_config_parameter WHERE key = %s", (ai_job.STATE_PARAM,))
+        self.assertEqual(json.loads(self.env.cr.fetchone()[0]),
+                         {'server': 'prefork', 'cron_limit': 600, 'cron_threads': 1, 'dbs': 2})
+        # during a pass: the fetch refreshes it every STATE_REFRESH_SECONDS (heartbeat while a
+        # pass runs longer than HEARTBEAT_MINUTES; lastcall only moves when the pass ends)
+        self.set_state_age(timedelta(minutes=30))
+        with patch.object(ai_job, '_job_cursor', side_effect=lambda name: nullcontext(self.env.cr)):
+            ai_job._dispatch_fetch(db, 0, set(), 1)  # just reported: no refresh
+            self.assertIsNone(ai_job._remote_runner_view(self.env.cr))
+            ai_job._state_written[db] = time.monotonic() - ai_job.STATE_REFRESH_SECONDS - 1
+            ai_job._dispatch_fetch(db, 0, set(), 1)
+            self.assertTrue(ai_job._remote_runner_view(self.env.cr))
+        # the uninstall hook removes it
+        from odoo.addons.woow_ai_contact.hooks import uninstall_hook
+        with patch.object(type(self.env['woow.ai.contact']), 'search', return_value=self.env['woow.ai.contact']):
+            uninstall_hook(self.env)
+        self.env.cr.execute("SELECT 1 FROM ir_config_parameter WHERE key = %s", (ai_job.STATE_PARAM,))
+        self.assertFalse(self.env.cr.fetchone())
+
+    def test_server_stopping(self):
+        class Threaded:
+            quit_signals_received = 0
+
+            def handler(self, sig, frame):
+                pass
+
+        class Worker:
+            alive = True
+
+            def handler(self, sig, frame):
+                pass
+        threaded, worker = Threaded(), Worker()
+        with patch.object(signal, 'getsignal', return_value=threaded.handler):
+            self.assertFalse(ai_job._server_stopping())
+            threaded.quit_signals_received = 1
+            self.assertTrue(ai_job._server_stopping())
+        with patch.object(signal, 'getsignal', return_value=worker.handler):
+            self.assertFalse(ai_job._server_stopping())
+            worker.alive = False
+            self.assertTrue(ai_job._server_stopping())
+        with patch.object(signal, 'getsignal', return_value=signal.default_int_handler):
+            self.assertFalse(ai_job._server_stopping())  # tests, shell
 
     def test_runner_is_cached_and_logged_once(self):
         db = self.env.cr.dbname
@@ -273,6 +455,10 @@ class TestDispatchModel(AiContactCase):
             self.assertFalse(self.contact.job_runner_warning)
             self.assertIn('AI Contacts: Run AI Replies', self.contact.job_runner_info)
             self.assertIn('900', self.contact.job_runner_info)
+            self.assertNotIn('Warning: the cron runner', self.contact.job_runner_info)
+        with self.runner(dict(CRON_INFO, shared=True, cron_threads=1, dbs=1)):
+            self.contact.invalidate_recordset(['job_runner_info', 'job_runner_warning'])
+            self.assertIn('Warning: the cron runner has 1 cron thread(s)', self.contact.job_runner_info)
 
     # --- candidates, locks, no double run ---
 
@@ -323,7 +509,9 @@ class TestDispatchModel(AiContactCase):
         try:
             channels, next_due = self.Job._dispatch_candidates(limit=10)
             self.assertEqual(channels, [])
-            self.assertEqual(next_due, ai_job.DISPATCH_BUSY_RETRY_SECONDS)
+            # review: a locked conversation kept the pass polling for its whole
+            # budget (next_due 5 s < idle_wait); its owner chains its own jobs
+            self.assertIsNone(next_due)
         finally:
             release()
 
@@ -384,6 +572,88 @@ class TestDispatchModel(AiContactCase):
         self.env.flush_all()
         self.assertFalse(self.Job._due_job_id(chat.id))
 
+    def test_candidates_are_shared_between_contacts(self):
+        """Review: a slow backend could take every slot (global FIFO); the
+        contact with the fewest running replies goes first, and with two or
+        more active contacts one contact never takes the last free slot."""
+        a1, a2 = self.chat(self.internal), self.chat(self.portal)
+        n1 = self.chat(self.internal, self.n8n)
+        for chat, user in ((a1, self.internal), (a2, self.portal), (n1, self.internal)):
+            self.post(chat, user, 'hi')
+            self.due(self.jobs(chat))
+        Job = self.Job
+        # oldest first within a contact, contacts in turn
+        self.assertEqual(Job._dispatch_candidates(limit=2, slots=2)[0], [a1.id, n1.id])
+        self.assertEqual(Job._dispatch_candidates(limit=3)[0], [a1.id, n1.id, a2.id])
+        # a1 runs (slow backend): its contact may not take the last slot of 2 ...
+        self.assertEqual(Job._dispatch_candidates(exclude={a1.id}, limit=2, slots=2)[0], [n1.id])
+        # ... but may with more slots, after the other contact
+        self.assertEqual(Job._dispatch_candidates(exclude={a1.id}, limit=3, slots=4)[0], [n1.id, a2.id])
+        # one active contact: nothing to keep a slot for
+        self.n8n.active = False
+        self.env.flush_all()
+        self.assertEqual(Job._dispatch_candidates(exclude={a1.id}, limit=2, slots=2)[0], [n1.id, a2.id])
+
+    def test_channel_worker_does_not_chain_past_the_window(self):
+        db = self.env.cr.dbname
+        Job = type(self.Job)
+        ran = []
+
+        def run_job(job, commit=True):
+            ran.append(job.id)
+            return 5, True
+        with patch.object(ai_job, '_job_cursor', side_effect=lambda name: nullcontext(self.env.cr)), \
+                patch.object(Job, '_run_job', autospec=True, side_effect=run_job):
+            with patch.object(Job, '_due_job_id', side_effect=[11, 12, False]) as due:
+                self.assertIsNone(ai_job._channel_worker(db, 0, 5, may_continue=lambda: False))
+            self.assertEqual((ran, due.call_count), ([11], 1))  # 12 is left to the next pass
+            ran.clear()
+            with patch.object(Job, '_due_job_id', side_effect=[11, 12, False]):
+                self.assertIsNone(ai_job._channel_worker(db, 0, 5, may_continue=lambda: True))
+            self.assertEqual(ran, [11, 12])
+            ran.clear()
+            with patch.object(Job, '_due_job_id', side_effect=[11, 11]):  # still due after its run: crashed
+                self.assertEqual(ai_job._channel_worker(db, 0, 5, may_continue=lambda: True), FAILED)
+            self.assertEqual(ran, [11])
+
+    def test_typing_hub(self):
+        """One thread and one short cursor refresh "typing" for every running
+        reply (a reply holds a single connection); a removed reply is never
+        refreshed again."""
+        db = self.env.cr.dbname
+        a, n = self.chat(self.internal), self.chat(self.internal, self.n8n)
+        Member = type(self.env['discuss.channel.member'])
+        hub = ai_job._TypingHub()
+        with patch.object(ai_job, '_job_cursor', side_effect=lambda name: nullcontext(self.env.cr)), \
+                patch.object(Member, '_notify_typing', autospec=True) as typing, \
+                patch.object(hub, '_run'):  # no thread here: refresh by hand
+            ka = hub.add(db, a.id, self.contact.partner_id.id)
+            kn = hub.add(db, n.id, self.n8n.partner_id.id)
+            hub.remove(kn)
+            hub._refresh([ka, kn])
+        self.assertEqual([(c.args[0].partner_id, c.args[1]) for c in typing.call_args_list],
+                         [(self.contact.partner_id, True)])
+        self.assertGreater(hub._entries[ka], time.monotonic() + ai_job.TYPING_REFRESH_SECONDS - 2)
+        # the thread refreshes while entries exist and ends with the last one
+        hub = ai_job._TypingHub()
+        calls = []
+
+        def refresh(keys):
+            calls.append(list(keys))
+            with hub._lock:
+                for key in keys:
+                    hub._entries[key] = time.monotonic() + 0.05
+        with patch.object(ai_job, 'TYPING_REFRESH_SECONDS', 0.05), patch.object(hub, '_refresh', side_effect=refresh):
+            key = hub.add(db, a.id, 1)
+            time.sleep(0.4)
+            hub.remove(key)
+            thread = hub._thread
+            if thread:
+                thread.join(2)
+        self.assertGreaterEqual(len(calls), 2)
+        self.assertTrue(all(c == [key] for c in calls))
+        self.assertIsNone(hub._thread)
+
     # --- the cron entry ---
 
     def test_settings(self):
@@ -392,9 +662,13 @@ class TestDispatchModel(AiContactCase):
         self.n8n.timeout_seconds = 300
         info = dict(CRON_INFO, max_timeout=300)
         thread = threading.current_thread()
-        with patch.dict(config.options, {'workers': 2, 'limit_time_real': 120, 'limit_time_real_cron': 900}), \
-                patch.object(ai_job, '_pool_free_connections', return_value=60):
+        db_one = {'db_name': self.env.cr.dbname, 'max_cron_threads': 2}
+        no_ping = {'pid': None, 'at': None, 'probe': False}
+        with patch.dict(config.options, dict(db_one, workers=2, limit_time_real=120, limit_time_real_cron=900)), \
+                patch.object(ai_job, '_pool_free_connections', return_value=60), \
+                patch.dict(ai_job._watchdog_ping, no_ping):
             s = Job._dispatch_settings(info)
+            self.assertEqual((s['shared'], s['idle_wait']), (False, ai_job.DISPATCH_IDLE_WAIT_SECONDS))
             # prefork: 900 - 70 (idle sleep) - 300 - 60
             self.assertEqual((s['budget'], s['concurrency']), (min(470, ai_job.MAX_DISPATCH_SECONDS), 4))
             with patch.dict(config.options, {'limit_time_real_cron': 400}):
@@ -405,14 +679,32 @@ class TestDispatchModel(AiContactCase):
             self.assertEqual(Job._dispatch_settings(info)['concurrency'], ai_job.MAX_CONCURRENCY)
             self.env['ir.config_parameter'].sudo().set_param('woow_ai_contact.max_concurrency', 'x')
             self.assertEqual(Job._dispatch_settings(info)['concurrency'], 4)
+            # prefork, measured: time since the worker's last watchdog ping (idle sleep + earlier crons)
+            with patch.dict(ai_job._watchdog_ping, {'pid': os.getpid(), 'at': time.monotonic() - 250,
+                                                    'probe': True}), \
+                    patch.dict(config.options, {'limit_time_real_cron': 800}):
+                s = Job._dispatch_settings(info)
+                self.assertAlmostEqual(s['used'], 250, delta=2)
+                self.assertAlmostEqual(s['budget'], 800 - 250 - 300 - 60, delta=2)
+            # probe installed but no ping since this module was loaded: the load time counts too
+            with patch.dict(ai_job._watchdog_ping, {'pid': None, 'at': None, 'probe': True}), \
+                    patch.object(ai_job, '_MODULE_LOADED_AT', (os.getpid(), time.monotonic() - 40)):
+                self.assertAlmostEqual(Job._dispatch_settings(info)['used'], 70 + 40, delta=2)
+            # shared cron worker (one cron thread, or several databases): short window and wait
+            for shared in ({'max_cron_threads': 1}, {'db_name': 'a,b'}):
+                with patch.dict(config.options, dict(shared, limit_time_real_cron=0)):
+                    s = Job._dispatch_settings(info)
+                    self.assertEqual((s['shared'], s['budget'], s['idle_wait']),
+                                     (True, ai_job.SHARED_DISPATCH_SECONDS, ai_job.SHARED_IDLE_WAIT_SECONDS))
         # threaded cron thread: what the pass already used counts
-        with patch.dict(config.options, {'workers': 0, 'limit_time_real': 120, 'limit_time_real_cron': 1800}), \
+        with patch.dict(config.options, dict(db_one, workers=0, limit_time_real=120, limit_time_real_cron=1800)), \
                 patch.object(ai_job, '_pool_free_connections', return_value=6), \
                 patch.object(thread, 'type', 'cron', create=True), \
                 patch.object(thread, 'start_time', time.time() - 100, create=True):
             s = Job._dispatch_settings(info)
             self.assertAlmostEqual(s['budget'], ai_job.MAX_DISPATCH_SECONDS, delta=1)
-            self.assertEqual(s['concurrency'], 2)  # db_maxconn 6 of a cron pod: (6 - 2) // 2
+            # db_maxconn 6 of a cron pod: one cursor per reply, one for the fetches, one for "typing"
+            self.assertEqual(s['concurrency'], 4)
             with patch.dict(config.options, {'limit_time_real_cron': 600}):
                 self.assertAlmostEqual(Job._dispatch_settings(info)['budget'], 600 - 100 - 300 - 60, delta=2)
 
@@ -435,7 +727,10 @@ class TestDispatchModel(AiContactCase):
         kwargs = dispatcher.call_args.kwargs
         self.assertGreaterEqual(kwargs['concurrency'], 1)
         self.assertEqual(kwargs['poll_interval'], ai_job.DISPATCH_POLL_SECONDS)
+        self.assertIs(kwargs['should_stop'], ai_job._server_stopping)
+        self.assertIn(kwargs['idle_wait'], (ai_job.DISPATCH_IDLE_WAIT_SECONDS, ai_job.SHARED_IDLE_WAIT_SECONDS))
         self.assertEqual(len(self.dispatcher_triggers() - before), 1)  # budget reached: next pass now
+        self.assertTrue(ai_job._remote_runner_view(self.env.cr))  # the cron process reported itself
 
     def test_thread_mode_cron_recovers(self):
         with self.runner(THREAD_INFO), patch.object(type(self.Job), '_cron_recover_jobs', return_value=3) as rec, \

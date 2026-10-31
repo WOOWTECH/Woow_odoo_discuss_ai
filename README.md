@@ -85,8 +85,15 @@ returns only when its replies are posted. The AI contact form (Backend tab,
   `limit_time_real_cron` (or `limit_time_real` when it is `-1`) ≥ longest
   timeout + 60 s, **+ 70 s with `workers` > 0** (a prefork cron worker's idle
   sleep counts on its watchdog). Default timeout 300 s → `limit_time_real_cron
-  = 430` or more (e.g. 600). With `max_cron_threads = 1` other scheduled
-  actions wait while replies run: 2 or more is recommended.
+  = 430` or more (e.g. 600). When crons run in another process (web server
+  with `max_cron_threads = 0`), the mode follows what that cron process
+  reports (its server type and time limit), not the web server's config.
+- A pass holds its cron worker: other scheduled actions of that worker (and
+  its other databases) wait. With `max_cron_threads = 1`, or one cron process
+  for several databases, each pass starts new replies for at most 60 s (the
+  form shows a warning); `max_cron_threads` ≥ 2 and one cron process per
+  database with AI contacts are recommended. The cron process needs
+  `db_maxconn` ≥ concurrency + 5.
 - **Fallback (thread) mode**: without a cron runner, or when the cron time
   limit is too short, replies run in a thread of the web worker that saved the
   message (the 18.0.1.0.0 behaviour): a web worker that restarts during a long

@@ -513,6 +513,12 @@ class WoowAiContact(models.Model):
         if limit:
             lines.append(env._('Cron time limit: %(limit)s s (%(server)s server); longest timeout: %(timeout)s s.',
                                limit=limit, server=info['server'], timeout=info['max_timeout']))
+        if info['mode'] == 'cron' and info.get('shared'):
+            lines.append(env._('Warning: the cron runner has %(threads)s cron thread(s) for %(dbs)s database(s), so '
+                               'other scheduled actions (and databases) wait while replies run; each pass therefore '
+                               'starts new replies for at most 60 seconds. max_cron_threads = 2 or more, and one '
+                               'cron process per database with AI contacts, is recommended.',
+                               threads=info.get('cron_threads'), dbs=info.get('dbs')))
         text = '\n'.join(lines)
         warning = info['reason'] in ('no_cron_runner', 'cron_limit_too_low', 'forced_cron_limit_too_low')
         for contact in self:

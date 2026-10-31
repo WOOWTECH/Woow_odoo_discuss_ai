@@ -33,7 +33,8 @@ Odoo 18 模組：讓內部用戶與 portal 用戶在 Discuss 裡和「AI 聯絡�
 ### 伺服器需求（回覆在哪裡處理）
 網頁請求只存訊息並喚醒排程工作；排程動作「AI 聯絡人：執行 AI 回覆」在 **cron 程序**裡等後端回覆、張貼後才結束，網頁程序回收不會再切斷長回覆。AI 聯絡人表單（後端分頁「回覆處理方式」）會顯示目前的模式。
 
-- **排程模式**（正常）：要有 cron（本伺服器 `max_cron_threads` ≥ 1，或同一資料庫的 cron 在別的程序跑），而且 cron 時限夠長：`limit_time_real_cron`（設 `-1` 時看 `limit_time_real`）≥ 最長逾時＋60 秒，**`workers` > 0 時再加 70 秒**（prefork 的 cron worker 閒置等待也算在看門狗時間內）。預設逾時 300 秒 → `limit_time_real_cron = 430` 以上（例如 600）。`max_cron_threads = 1` 時回覆進行中其他排程要等，建議 2 以上。
+- **排程模式**（正常）：要有 cron（本伺服器 `max_cron_threads` ≥ 1，或同一資料庫的 cron 在別的程序跑），而且 cron 時限夠長：`limit_time_real_cron`（設 `-1` 時看 `limit_time_real`）≥ 最長逾時＋60 秒，**`workers` > 0 時再加 70 秒**（prefork 的 cron worker 閒置等待也算在看門狗時間內）。預設逾時 300 秒 → `limit_time_real_cron = 430` 以上（例如 600）。cron 在別的程序跑時（網頁伺服器 `max_cron_threads = 0`），模式依 cron 程序回報的伺服器型態與時限判斷，不看網頁伺服器自己的設定。
+- 一趟處理期間會占住那個 cron worker：同一個 worker 的其他排程（以及它服務的其他資料庫）要等。`max_cron_threads = 1`、或一個 cron 程序服務多個資料庫時，每趟最多只花 60 秒接新的回覆（表單會顯示警告）；建議 `max_cron_threads` ≥ 2，並且每個有 AI 聯絡人的資料庫各有自己的 cron 程序。cron 程序的 `db_maxconn` 要 ≥ 同時處理數＋5。
 - **備援（執行緒）模式**：沒有 cron，或 cron 時限不夠時，回覆在收到訊息的網頁程序背景執行緒處理（18.0.1.0.0 的做法）：長回覆途中該網頁程序重啟，回覆會被切斷並重跑。會記一次警告並顯示在表單上。
 - 系統參數：`woow_ai_contact.job_runner` = `auto`（預設）｜`cron`｜`thread`；`woow_ai_contact.max_concurrency`（預設 4，最多 16；另受 cron 程序可用的資料庫連線數限制）。
 

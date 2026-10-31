@@ -1086,3 +1086,14 @@ msgstr "其他程序"
 #: code:addons/woow_ai_contact/models/ai_contact.py:0
 msgid "this server"
 msgstr "本伺服器"
+
+#. module: woow_ai_contact
+#. odoo-python
+#: code:addons/woow_ai_contact/models/ai_contact.py:0
+msgid ""
+"Warning: the cron runner has %(threads)s cron thread(s) for %(dbs)s "
+"database(s), so other scheduled actions (and databases) wait while "
+"replies run; each pass therefore starts new replies for at most 60 "
+"seconds. max_cron_threads = 2 or more, and one cron process per database "
+"with AI contacts, is recommended."
+msgstr "警告：cron 執行者只有 %(threads)s 個 cron thread、服務 %(dbs)s 個資料庫，回覆處理期間其他排程（和其他資料庫）要等，所以每一趟最多只花 60 秒接新的回覆。建議 max_cron_threads 設 2 以上，並且每個有 AI 聯絡人的資料庫各有自己的 cron 程序。"

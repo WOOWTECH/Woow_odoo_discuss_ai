@@ -1065,3 +1065,14 @@ msgstr ""
 #: code:addons/woow_ai_contact/models/ai_contact.py:0
 msgid "this server"
 msgstr ""
+
+#. module: woow_ai_contact
+#. odoo-python
+#: code:addons/woow_ai_contact/models/ai_contact.py:0
+msgid ""
+"Warning: the cron runner has %(threads)s cron thread(s) for %(dbs)s "
+"database(s), so other scheduled actions (and databases) wait while "
+"replies run; each pass therefore starts new replies for at most 60 "
+"seconds. max_cron_threads = 2 or more, and one cron process per database "
+"with AI contacts, is recommended."
+msgstr ""
