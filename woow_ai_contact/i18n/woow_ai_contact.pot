@@ -6,8 +6,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Odoo Server 18.0-20250807\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-31 08:13+0000\n"
-"PO-Revision-Date: 2026-10-31 08:13+0000\n"
+"POT-Creation-Date: 2026-10-31 09:08+0000\n"
+"PO-Revision-Date: 2026-10-31 09:08+0000\n"
 "Last-Translator: \n"
 "Language-Team: \n"
 "MIME-Version: 1.0\n"
@@ -19,6 +19,18 @@ msgstr ""
 #. odoo-python
 #: code:addons/woow_ai_contact/models/ai_contact.py:0
 msgid "%s (copy)"
+msgstr ""
+
+#. module: woow_ai_contact
+#. odoo-python
+#: code:addons/woow_ai_contact/models/ai_contact_reply.py:0
+msgid "(An image in the reply could not be attached.)"
+msgstr ""
+
+#. module: woow_ai_contact
+#. odoo-python
+#: code:addons/woow_ai_contact/models/ai_contact_reply.py:0
+msgid "(The AI produced a file that could not be delivered.)"
 msgstr ""
 
 #. module: woow_ai_contact
@@ -168,6 +180,17 @@ msgid "Chat with our AI assistants"
 msgstr ""
 
 #. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_call_log__completion_tokens
+msgid "Completion Tokens"
+msgstr ""
+
+#. module: woow_ai_contact
+#. odoo-python
+#: code:addons/woow_ai_contact/models/ai_contact_backend.py:0
+msgid "Connection OK (HTTP %s)."
+msgstr ""
+
+#. module: woow_ai_contact
 #: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_push_key_wizard__contact_id
 msgid "Contact"
 msgstr ""
@@ -181,6 +204,13 @@ msgstr ""
 #. module: woow_ai_contact
 #: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_push_key_wizard_form
 msgid "Copy this key now. It is not stored and will not be shown again."
+msgstr ""
+
+#. module: woow_ai_contact
+#. odoo-python
+#: code:addons/woow_ai_contact/models/ai_contact_backend.py:0
+msgid ""
+"Could not connect to the backend. Check the URL and the network policy."
 msgstr ""
 
 #. module: woow_ai_contact
@@ -288,6 +318,12 @@ msgid "Endpoint URL"
 msgstr ""
 
 #. module: woow_ai_contact
+#. odoo-python
+#: code:addons/woow_ai_contact/models/ai_contact_backend.py:0
+msgid "Endpoint not found (HTTP %s). Check the URL."
+msgstr ""
+
+#. module: woow_ai_contact
 #: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_call_log__error
 #: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_job__error
 #: model:ir.model.fields.selection,name:woow_ai_contact.selection__woow_ai_call_log__status__error
@@ -325,6 +361,11 @@ msgstr ""
 #. module: woow_ai_contact
 #: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_job__finished_at
 msgid "Finished"
+msgstr ""
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_call_log__prompt_tokens
+msgid "From the \"usage\" of an OpenAI compatible answer (0 when not given)."
 msgstr ""
 
 #. module: woow_ai_contact
@@ -457,9 +498,8 @@ msgid "Leave empty to keep the current key"
 msgstr ""
 
 #. module: woow_ai_contact
-#: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_contact__api_key
-msgid ""
-"Leave empty to keep the current key. The saved key is never shown again."
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid "Leave empty to keep the current secret"
 msgstr ""
 
 #. module: woow_ai_contact
@@ -525,6 +565,23 @@ msgid ""
 msgstr ""
 
 #. module: woow_ai_contact
+#: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_contact__openai_stream
+msgid ""
+"OpenAI compatible backends only: ask for a streamed (SSE) answer. Bytes keep"
+" flowing while the backend works, so proxies such as Cloudflare (about 100 "
+"seconds without data) do not cut long answers. The call fails when no data "
+"arrives for 30 seconds."
+msgstr ""
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_contact__api_key
+msgid ""
+"OpenAI compatible: sent as \"Authorization: Bearer\". n8n: the signing "
+"secret of the X-Woow-Signature HMAC (never sent). Leave empty to keep the "
+"current key; the saved key is never shown again."
+msgstr ""
+
+#. module: woow_ai_contact
 #: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_contact__endpoint_url
 msgid ""
 "OpenAI compatible: the base URL ending in /v1 (…/chat/completions is added)."
@@ -572,6 +629,11 @@ msgstr ""
 #. module: woow_ai_contact
 #: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_contact__error_message
 msgid "Posted when the backend fails. Empty: a default message."
+msgstr ""
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_call_log__prompt_tokens
+msgid "Prompt Tokens"
 msgstr ""
 
 #. module: woow_ai_contact
@@ -635,6 +697,25 @@ msgid "Response Content"
 msgstr ""
 
 #. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__max_retries
+msgid "Retries"
+msgstr ""
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_contact__max_retries
+msgid ""
+"Retries (0-2) when the connection fails or the backend answers HTTP 429 or "
+"503, after 3 and 10 seconds. Read timeouts and other HTTP errors are never "
+"retried: the backend may already be running tools."
+msgstr ""
+
+#. module: woow_ai_contact
+#. odoo-python
+#: code:addons/woow_ai_contact/models/ai_contact.py:0
+msgid "Retries must be between 0 and 2."
+msgstr ""
+
+#. module: woow_ai_contact
 #: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
 msgid "Revoke Push Key"
 msgstr ""
@@ -660,8 +741,22 @@ msgid "Runs"
 msgstr ""
 
 #. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid ""
+"Secret of the X-Woow-Signature HMAC (timestamp window 300 seconds). It is "
+"never sent to n8n: verify the signature in the workflow. Leave empty to keep"
+" the current secret."
+msgstr ""
+
+#. module: woow_ai_contact
 #: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__sequence
 msgid "Sequence"
+msgstr ""
+
+#. module: woow_ai_contact
+#. odoo-python
+#: code:addons/woow_ai_contact/models/ai_contact_backend.py:0
+msgid "Set the endpoint URL and the API key first."
 msgstr ""
 
 #. module: woow_ai_contact
@@ -672,6 +767,11 @@ msgstr ""
 #. module: woow_ai_contact
 #: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_contact__description
 msgid "Shown to users in the AI contact lists."
+msgstr ""
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid "Signing Secret"
 msgstr ""
 
 #. module: woow_ai_contact
@@ -699,9 +799,39 @@ msgid "Status"
 msgstr ""
 
 #. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__openai_stream
+msgid "Stream Replies"
+msgstr ""
+
+#. module: woow_ai_contact
 #: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__system_prompt
 #: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
 msgid "System Prompt"
+msgstr ""
+
+#. module: woow_ai_contact
+#. odoo-python
+#: code:addons/woow_ai_contact/models/ai_contact_backend.py:0
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid "Test Connection"
+msgstr ""
+
+#. module: woow_ai_contact
+#. odoo-python
+#: code:addons/woow_ai_contact/models/ai_contact_backend.py:0
+msgid "The backend answered HTTP %s."
+msgstr ""
+
+#. module: woow_ai_contact
+#. odoo-python
+#: code:addons/woow_ai_contact/models/ai_contact_backend.py:0
+msgid "The backend did not answer within %s seconds."
+msgstr ""
+
+#. module: woow_ai_contact
+#. odoo-python
+#: code:addons/woow_ai_contact/models/ai_contact_backend.py:0
+msgid "The backend refused the key or the signature (HTTP %s)."
 msgstr ""
 
 #. module: woow_ai_contact
@@ -747,6 +877,16 @@ msgid "Timeout (seconds)"
 msgstr ""
 
 #. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_call_log__total_tokens
+msgid "Total Tokens"
+msgstr ""
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_contact__timeout_seconds
+msgid "Total time allowed for one answer (5-3600 seconds)."
+msgstr ""
+
+#. module: woow_ai_contact
 #: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_job__message_id
 msgid "Trigger Message"
 msgstr ""
@@ -770,7 +910,10 @@ msgstr ""
 
 #. module: woow_ai_contact
 #: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_contact__allowed_group_ids
-msgid "Users in one of these groups can chat with this AI contact."
+msgid ""
+"Users in one of these groups can chat with this AI contact. Empty: nobody "
+"can open a direct chat (the AI contact is then only used by bridges such as "
+"Live Chat) and its bot partner stays archived."
 msgstr ""
 
 #. module: woow_ai_contact

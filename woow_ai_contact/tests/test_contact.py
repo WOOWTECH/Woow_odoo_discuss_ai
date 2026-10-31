@@ -1,12 +1,18 @@
 # -*- coding: utf-8 -*-
 import base64
+import hashlib
+import hmac
+import json
+from unittest.mock import patch
+
+import requests
 
 from odoo.exceptions import AccessError, ValidationError
 from odoo.tests.common import new_test_user, tagged
 
 from odoo.addons.woow_ai_contact.models.ai_contact import endpoint_url_allowed, hash_push_key
 
-from .common import TEST_KEY, TINY_PNG, AiContactCase
+from .common import BACKEND_GET, BACKEND_POST, TEST_KEY, TINY_PNG, AiContactCase, http_response
 
 
 @tagged('woow_ai_contact')
@@ -23,6 +29,83 @@ class TestAiContact(AiContactCase):
         self.assertTrue(partner.image_1920)
         self.contact.active = False
         self.assertFalse(partner.active)
+
+    def test_bot_partner_archived_without_groups(self):
+        """Empty allowed groups = nobody can DM it (Live Chat only): partner archived."""
+        partner = self.contact.partner_id
+        self.contact.allowed_group_ids = False
+        self.assertFalse(partner.active)
+        self.contact.allowed_group_ids = self.env.ref('base.group_user')
+        self.assertTrue(partner.active)
+        livechat_only = self.env['woow.ai.contact'].create({'name': 'Site bot', 'allowed_group_ids': False})
+        self.assertFalse(livechat_only.partner_id.active)
+        self.assertTrue(livechat_only.partner_id.exists())
+        # archived AI contact with groups: archived partner; unarchived: active again
+        self.contact.active = False
+        self.assertFalse(partner.active)
+        self.contact.active = True
+        self.assertTrue(partner.active)
+        # no groups: unarchiving the AI contact keeps the partner archived
+        livechat_only.active = False
+        livechat_only.active = True
+        self.assertFalse(livechat_only.partner_id.active)
+
+    def test_new_backend_defaults(self):
+        self.assertTrue(self.contact.openai_stream)
+        self.assertEqual(self.contact.max_retries, 1)
+        with self.assertRaises(ValidationError):
+            self.contact.max_retries = 3
+        self.contact.max_retries = 0
+
+    def test_test_connection_openai(self):
+        with patch(BACKEND_GET, return_value=http_response(200, {'data': [{'id': 'secret-model-list'}]})) as get:
+            action = self.contact.action_test_connection()
+        args, kwargs = get.call_args
+        self.assertEqual(args[0], 'https://llm.example.com/v1/models')
+        self.assertEqual(kwargs['headers'], {'Authorization': 'Bearer %s' % TEST_KEY})
+        self.assertFalse(kwargs['allow_redirects'])
+        params = action['params']
+        self.assertEqual(action['tag'], 'display_notification')
+        self.assertEqual(params['type'], 'success')
+        self.assertIn('200', params['message'])
+        self.assertNotIn('secret-model-list', json.dumps(action))
+        for status in (401, 404, 502):
+            with patch(BACKEND_GET, return_value=http_response(status, text='upstream detail')):
+                params = self.contact.action_test_connection()['params']
+            self.assertEqual(params['type'], 'danger')
+            self.assertIn(str(status), params['message'])
+            self.assertNotIn('upstream detail', params['message'])
+        with patch(BACKEND_GET, side_effect=requests.ConnectionError('down')):
+            self.assertEqual(self.contact.action_test_connection()['params']['type'], 'danger')
+        with patch(BACKEND_GET, side_effect=requests.ReadTimeout('slow')):
+            self.assertEqual(self.contact.action_test_connection()['params']['type'], 'danger')
+        with patch(BACKEND_POST) as post, patch(BACKEND_GET, return_value=http_response(200, {})):
+            self.contact.action_test_connection()
+        post.assert_not_called()  # never a chat completion (it would run the agent)
+
+    def test_test_connection_n8n(self):
+        with patch(BACKEND_POST, return_value=http_response(200, {'skip': True})) as post:
+            params = self.n8n.action_test_connection()['params']
+        self.assertEqual(params['type'], 'success')
+        args, kwargs = post.call_args
+        self.assertEqual(args[0], 'https://n8n.example.com/webhook/abc')
+        headers = kwargs['headers']
+        self.assertNotIn('Authorization', headers)
+        expected = hmac.new(TEST_KEY.encode(), headers['X-Woow-Timestamp'].encode() + b'.' + kwargs['data'],
+                            hashlib.sha256).hexdigest()
+        self.assertEqual(headers['X-Woow-Signature'], 'sha256=%s' % expected)
+        self.assertEqual(json.loads(kwargs['data'])['event'], 'ping')
+        with patch(BACKEND_POST, return_value=http_response(401)):
+            self.assertEqual(self.n8n.action_test_connection()['params']['type'], 'danger')
+
+    def test_test_connection_admin_only(self):
+        with self.assertRaises(AccessError):
+            self.contact.with_user(self.internal).action_test_connection()
+        self.contact.action_clear_api_key()
+        with patch(BACKEND_GET) as get:
+            params = self.contact.action_test_connection()['params']
+        get.assert_not_called()
+        self.assertEqual(params['type'], 'danger')
 
     def test_default_groups(self):
         self.assertEqual(set(self.contact.allowed_group_ids.ids),

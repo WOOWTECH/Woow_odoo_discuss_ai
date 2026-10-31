@@ -14,7 +14,8 @@ Each AI contact is a bot partner connected to an OpenAI compatible backend
 
 * Durable reply queue: replies are produced after commit by a background
   worker, one at a time per conversation, recovered after a restart
-* "typing" indicator while the backend answers, 5 minute default timeout
+* "typing" indicator while the backend answers, 5 minute default timeout;
+  OpenAI compatible answers streamed (SSE) so proxies do not cut long answers
 * Attachments both ways: user images inlined for OpenAI compatible backends,
   other files as signed 1-hour download links; files in AI replies are
   attached from allowlisted domains

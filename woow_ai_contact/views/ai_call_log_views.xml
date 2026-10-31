@@ -12,6 +12,7 @@
                 <field name="status"/>
                 <field name="http_status"/>
                 <field name="duration_ms"/>
+                <field name="total_tokens" optional="hide"/>
                 <field name="error"/>
             </list>
         </field>
@@ -36,6 +37,11 @@
                             <field name="http_status"/>
                             <field name="duration_ms"/>
                         </group>
+                    </group>
+                    <group invisible="not total_tokens">
+                        <field name="prompt_tokens"/>
+                        <field name="completion_tokens"/>
+                        <field name="total_tokens"/>
                     </group>
                     <group>
                         <field name="error"/>

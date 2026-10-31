@@ -14,6 +14,7 @@ from odoo.tests.common import tagged
 from odoo.addons.woow_ai_contact.models.ai_job import JOB_MAX_AGE_MINUTES, MAX_JOB_RUNS
 from odoo.addons.woow_ai_contact.tools import media
 
+from .test_media import ooxml
 from .common import (BACKEND_POST, BACKEND_SLEEP, MEDIA_GET, TEST_KEY, TINY_PDF, TINY_PNG, AiContactCase,
                      http_response, openai_ok)
 
@@ -43,17 +44,33 @@ class TestOpenAiJob(AiContactCase):
         args, kwargs = post.call_args
         self.assertEqual(args[0], 'https://llm.example.com/v1/chat/completions')
         self.assertEqual(kwargs['headers']['Authorization'], 'Bearer %s' % TEST_KEY)
-        self.assertEqual(kwargs['timeout'], (10, 300))
+        # streamed by default: the read timeout is the idle timeout
+        self.assertTrue(kwargs['stream'])
+        self.assertEqual(kwargs['timeout'], (10, 30))
         body = json.loads(kwargs['data'])
         self.assertEqual(body['model'], 'test-model')
+        self.assertIs(body['stream'], True)
         self.assertNotIn('tools', body)
         session_id = self.env['woow.ai.contact']._session_id(chat)
         self.assertEqual(body['user'], session_id)
-        self.assertTrue(session_id.startswith('woow-ai:') and session_id.endswith(':%s' % chat.id))
-        self.assertEqual(body['metadata']['odoo_user']['user_id'], self.internal.id)
-        self.assertEqual(body['metadata']['odoo_user']['email'], 'iris@example.com')
-        self.assertFalse(body['metadata']['odoo_user']['is_portal'])
-        self.assertEqual(body['messages'][0], {'role': 'system', 'content': 'You are helpful.'})
+        uuid = self.env['ir.config_parameter'].sudo().get_param('database.uuid').replace('-', '')[:8]
+        self.assertEqual(session_id, 'woow-ai-%s-%s' % (uuid, chat.id))
+        self.assertNotIn(':', session_id)
+        # metadata: flat, string values only (OpenAI API rule); email kept there
+        metadata = body['metadata']
+        self.assertTrue(all(isinstance(k, str) and isinstance(v, str) for k, v in metadata.items()))
+        self.assertEqual(metadata['session_id'], session_id)
+        self.assertEqual(metadata['odoo_user_id'], str(self.internal.id))
+        self.assertEqual(metadata['odoo_email'], 'iris@example.com')
+        self.assertEqual(metadata['odoo_is_portal'], 'false')
+        # system: the prompt, then the identity block the model can see (no email)
+        system = body['messages'][0]
+        self.assertEqual(system['role'], 'system')
+        self.assertTrue(system['content'].startswith('You are helpful.\n\n'))
+        self.assertIn('- name: Internal Iris', system['content'])
+        self.assertIn('- account: internal user', system['content'])
+        self.assertIn('- user_id: %s' % self.internal.id, system['content'])
+        self.assertNotIn('iris@example.com', system['content'])
         self.assertEqual(body['messages'][-1], {'role': 'user', 'content': '報價？'})
         # call log: status only
         log = self.env['woow.ai.call.log'].search([('job_id', '=', job.id)])
@@ -70,8 +87,12 @@ class TestOpenAiJob(AiContactCase):
             run(self.jobs(chat))
         body = json.loads(post.call_args.kwargs['data'])
         self.assertNotIn('model', body)
-        self.assertEqual([m['role'] for m in body['messages']], ['user'])
-        self.assertTrue(body['metadata']['odoo_user']['is_portal'])
+        # no prompt: the system message only carries the identity block
+        self.assertEqual([m['role'] for m in body['messages']], ['system', 'user'])
+        self.assertTrue(body['messages'][0]['content'].startswith('You are chatting in Odoo'))
+        self.assertIn('- account: portal user', body['messages'][0]['content'])
+        self.assertNotIn('pat@example.com', body['messages'][0]['content'])
+        self.assertEqual(body['metadata']['odoo_is_portal'], 'true')
 
     def test_history_roles_and_think_tags(self):
         self.contact.welcome_message = 'Welcome!'
@@ -84,8 +105,9 @@ class TestOpenAiJob(AiContactCase):
         with patch(BACKEND_POST, return_value=openai_ok('answer two')) as post:
             run(self.jobs(chat)[-1])
         messages = json.loads(post.call_args.kwargs['data'])['messages']
+        # the leading welcome message is dropped: the turns start with the user
         self.assertEqual([(m['role'], m['content']) for m in messages[1:]], [
-            ('assistant', 'Welcome!'), ('user', 'one'), ('assistant', 'answer one'), ('user', 'two')])
+            ('user', 'one'), ('assistant', 'answer one'), ('user', 'two')])
 
     def test_max_history(self):
         self.contact.max_history = 2
@@ -321,7 +343,12 @@ class TestN8nJob(AiContactCase):
         args, kwargs = post.call_args
         self.assertEqual(args[0], 'https://n8n.example.com/webhook/abc')
         headers = kwargs['headers']
-        self.assertEqual(headers['Authorization'], 'Bearer %s' % TEST_KEY)
+        # the API key is only the signing secret: never sent (n8n stores headers)
+        self.assertNotIn('Authorization', headers)
+        self.assertNotIn(TEST_KEY, json.dumps(headers))
+        self.assertNotIn(TEST_KEY.encode(), kwargs['data'])
+        self.assertFalse(kwargs['stream'])
+        self.assertEqual(kwargs['timeout'], (10, 300))
         expected = hmac.new(TEST_KEY.encode(), headers['X-Woow-Timestamp'].encode() + b'.' + kwargs['data'],
                             hashlib.sha256).hexdigest()
         self.assertEqual(headers['X-Woow-Signature'], 'sha256=%s' % expected)
@@ -366,6 +393,18 @@ class TestN8nJob(AiContactCase):
         self.assertNotIn('files.example.com', reply.body)
         self.assertIn('href="https://evil.example.net/r.pdf"', reply.body)
         self.assertIn('href="https://evil.example.net/o.xlsx"', reply.body)
+
+    def test_office_files_keep_their_type(self):
+        payload = {'reply': {'text': '報表', 'attachments': [
+            {'name': '報表.xlsx', 'data_base64': base64.b64encode(ooxml('xl/workbook.xml')).decode()},
+            {'name': '說明.docx', 'data_base64': base64.b64encode(ooxml('word/document.xml')).decode()},
+        ]}}
+        chat, job, _post = self.run_n8n(payload)
+        by_name = {a.name: a.mimetype for a in job.reply_message_id.attachment_ids}
+        self.assertEqual(by_name, {
+            '報表.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            '說明.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        })
 
     def test_oversized_download_stays_link(self):
         self.n8n.max_download_mb = 1

@@ -32,6 +32,8 @@
                     <button name="action_clear_api_key" type="object" string="Remove API Key"
                             invisible="not api_key_set" class="btn-secondary"
                             confirm="Remove the saved backend API key?"/>
+                    <button name="action_test_connection" type="object" string="Test Connection"
+                            invisible="not id or not endpoint_url or not api_key_set" class="btn-secondary"/>
                 </header>
                 <sheet>
                     <div class="oe_button_box" name="button_box" groups="base.group_system">
@@ -60,8 +62,12 @@
                                     <field name="backend_type" widget="radio"/>
                                     <field name="endpoint_url"
                                            placeholder="https://litellm.example.com/v1 or https://n8n.example.com/webhook/…"/>
-                                    <field name="api_key" password="True"
+                                    <field name="api_key" password="True" invisible="backend_type == 'n8n'"
                                            placeholder="Leave empty to keep the current key"/>
+                                    <field name="api_key" string="Signing Secret" password="True"
+                                           invisible="backend_type != 'n8n'"
+                                           help="Secret of the X-Woow-Signature HMAC (timestamp window 300 seconds). It is never sent to n8n: verify the signature in the workflow. Leave empty to keep the current secret."
+                                           placeholder="Leave empty to keep the current secret"/>
                                     <field name="api_key_set"/>
                                     <field name="model" invisible="backend_type != 'openai'"
                                            placeholder="Empty: backend default"/>
@@ -69,6 +75,8 @@
                                 <group>
                                     <field name="max_history"/>
                                     <field name="timeout_seconds"/>
+                                    <field name="openai_stream" invisible="backend_type != 'openai'"/>
+                                    <field name="max_retries"/>
                                 </group>
                             </group>
                             <group string="System Prompt">

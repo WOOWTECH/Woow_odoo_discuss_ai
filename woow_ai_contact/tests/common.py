@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 from odoo.tests.common import TransactionCase, new_test_user
 
 BACKEND_POST = 'odoo.addons.woow_ai_contact.models.ai_contact_backend.requests.post'
+BACKEND_GET = 'odoo.addons.woow_ai_contact.models.ai_contact_backend.requests.get'
 MEDIA_GET = 'odoo.addons.woow_ai_contact.tools.media.requests.get'
 BACKEND_SLEEP = 'odoo.addons.woow_ai_contact.models.ai_contact_backend.time.sleep'
 
@@ -33,8 +34,41 @@ def http_response(status=200, json_data=None, text=None, headers=None, chunks=No
     return response
 
 
-def openai_ok(content='您好，我是 AI。'):
-    return http_response(200, {'choices': [{'message': {'role': 'assistant', 'content': content}}]})
+def openai_ok(content='您好，我是 AI。', usage=None):
+    data = {'choices': [{'message': {'role': 'assistant', 'content': content}}]}
+    if usage:
+        data['usage'] = usage
+    return http_response(200, data)
+
+
+def sse_response(chunks, status=200, error=None):
+    """Streamed (SSE) answer; `chunks` are str/bytes pieces of the raw body.
+    `error` is raised by iter_content after the chunks (e.g. an idle timeout)."""
+    response = MagicMock()
+    response.status_code = status
+    response.headers = {'Content-Type': 'text/event-stream; charset=utf-8'}
+    raw = [c.encode() if isinstance(c, str) else c for c in chunks]
+
+    def iter_content(chunk_size=None):
+        yield from raw
+        if error:
+            raise error
+
+    response.iter_content.side_effect = iter_content
+    response.json.side_effect = ValueError('not json')
+    return response
+
+
+def sse_event(data, event=None):
+    payload = data if isinstance(data, str) else json.dumps(data, ensure_ascii=False)
+    return ('event: %s\n' % event if event else '') + 'data: %s\n\n' % payload
+
+
+def delta(content, finish_reason=None, **extra):
+    choice = {'index': 0, 'delta': {'content': content} if content is not None else {}}
+    if finish_reason:
+        choice['finish_reason'] = finish_reason
+    return dict({'choices': [choice]}, **extra)
 
 
 class AiContactCase(TransactionCase):

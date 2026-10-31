@@ -5,6 +5,7 @@ Core module: direct chats (``channel_type == 'chat'``) with an AI contact.
 Other channel kinds plug in by overriding the ``_woow_ai_*`` hooks (the Live
 Chat bridge overrides ``_woow_ai_channel_contact``, ``_woow_ai_author_role``,
 ``_woow_ai_message_kind``, ``_woow_ai_is_paused``, ``_woow_ai_requester``,
+``_woow_ai_identity``, ``_woow_ai_system_prompt``, ``_woow_ai_link_hosts``,
 ``_woow_ai_channel_info`` and ``_woow_ai_check_author``).
 """
 
@@ -19,6 +20,9 @@ _logger = logging.getLogger(__name__)
 _BREAK_RE = re.compile(r'<\s*(br|/p|/div|/li|/tr|/h\d)\s*/?\s*>', re.IGNORECASE)
 _CELL_RE = re.compile(r'<\s*/t[dh]\s*>', re.IGNORECASE)
 _TAG_RE = re.compile(r'<[^>]+>')
+
+MAX_MESSAGE_TEXT = 16000  # characters of one history message sent to a backend
+TRUNCATED_MARKER = '\n…[truncated]'
 
 # Author checks (_woow_ai_check_author)
 AUTHOR_OK = 'ok'
@@ -87,6 +91,24 @@ class DiscussChannel(models.Model):
         members = self.sudo().channel_member_ids.filtered(lambda m: m.partner_id and m.partner_id != contact.partner_id)
         return members.sorted('id')[:1].partner_id
 
+    def _woow_ai_identity(self, contact):
+        """Identity of the person the AI talks to (docs/PROTOCOL.md "identity"):
+        the n8n ``user`` object, the openai ``metadata`` and system identity
+        block, and the language of the default messages. Bridges return their
+        own (e.g. a Live Chat guest without partner: ``is_guest``, name, lang)."""
+        self.ensure_one()
+        return contact._identity(self._woow_ai_requester(contact))
+
+    def _woow_ai_system_prompt(self, contact, history):
+        """System prompt sent to the backend ('' = none: the backend decides)."""
+        return (contact.sudo().system_prompt or '').strip()
+
+    def _woow_ai_link_hosts(self, contact):
+        """Hosts whose links in AI replies stay clickable, or None (any http(s)
+        link). Bridges facing anonymous visitors return their own site hosts
+        (prompt-injection phishing); other links are shown as plain text."""
+        return None
+
     def _woow_ai_channel_info(self, contact):
         """``channel`` object of the n8n payload."""
         self.ensure_one()
@@ -106,7 +128,14 @@ class DiscussChannel(models.Model):
         return rdata
 
     def _woow_ai_handle_new_message(self, message):
-        """Queue an AI reply (or refuse) for a newly posted message."""
+        """Queue an AI reply (or refuse) for a newly posted message.
+
+        Contract for bridges: returns the created ``woow.ai.job`` or False. The
+        job kind (``_woow_ai_message_kind``) is computed BEFORE the pause check
+        (``_woow_ai_is_paused``): the kind hook sees every allowed message, even
+        while the AI is paused (e.g. to act on a handoff keyword), and a paused
+        channel then gets no job.
+        """
         self.ensure_one()
         if message.message_type != 'comment' or message.model != 'discuss.channel':
             return False
@@ -153,6 +182,8 @@ class DiscussChannel(models.Model):
                 continue
             role, prefix = role
             text = html_to_text(message.body)
+            if len(text) > MAX_MESSAGE_TEXT:
+                text = text[:MAX_MESSAGE_TEXT] + TRUNCATED_MARKER
             attachments = message.sudo().attachment_ids
             if not text and not attachments:
                 continue

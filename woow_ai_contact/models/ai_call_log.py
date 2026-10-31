@@ -38,6 +38,10 @@ class WoowAiCallLog(models.Model):
     http_status = fields.Integer(string='HTTP Status', readonly=True)
     duration_ms = fields.Integer(string='Duration (ms)', readonly=True)
     error = fields.Char(string='Error', readonly=True)
+    prompt_tokens = fields.Integer(string='Prompt Tokens', readonly=True,
+                                   help='From the "usage" of an OpenAI compatible answer (0 when not given).')
+    completion_tokens = fields.Integer(string='Completion Tokens', readonly=True)
+    total_tokens = fields.Integer(string='Total Tokens', readonly=True)
     request_payload = fields.Text(string='Request Content', readonly=True)
     response_payload = fields.Text(string='Response Content', readonly=True)
 

@@ -16,6 +16,8 @@ from urllib.parse import urlsplit
 from odoo import api, fields, models, SUPERUSER_ID
 from odoo.exceptions import AccessError, ValidationError
 
+from ..tools import media
+
 _logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_HISTORY = 50
@@ -24,12 +26,10 @@ DEFAULT_TIMEOUT = 300
 MAX_TIMEOUT = 3600
 DEFAULT_MAX_DOWNLOAD_MB = 20
 MAX_DOWNLOAD_MB = 100
+DEFAULT_MAX_RETRIES = 1
+MAX_MAX_RETRIES = 2
 PUSH_KEY_PREFIX = 'wpk_'
 BOT_CATEGORY_XMLID = 'woow_ai_contact.partner_category_ai_contact'
-
-# Hosts allowed with plain http (in-cluster / local backends)
-_PLAIN_HTTP_HOSTS = ('localhost', '127.0.0.1', '::1')
-_PLAIN_HTTP_SUFFIXES = ('.svc.cluster.local',)
 
 
 def hash_push_key(key):
@@ -48,7 +48,7 @@ def endpoint_url_allowed(url):
     if parts.scheme == 'https':
         return True
     if parts.scheme == 'http':
-        return host in _PLAIN_HTTP_HOSTS or host.endswith(_PLAIN_HTTP_SUFFIXES)
+        return media.is_internal_host(host)
     return False
 
 
@@ -71,7 +71,9 @@ class WoowAiContact(models.Model):
         'res.groups', 'woow_ai_contact_res_groups_rel', 'contact_id', 'group_id',
         string='Allowed Groups', groups='base.group_system',
         default=lambda self: self._default_allowed_groups(),
-        help='Users in one of these groups can chat with this AI contact.',
+        help='Users in one of these groups can chat with this AI contact. Empty: nobody can open a '
+             'direct chat (the AI contact is then only used by bridges such as Live Chat) and its bot '
+             'partner stays archived.',
     )
 
     # --- Backend (system administrators only) ---
@@ -87,7 +89,9 @@ class WoowAiContact(models.Model):
     api_key = fields.Char(
         string='API Key', compute='_compute_api_key', inverse='_inverse_api_key',
         store=False, groups='base.group_system', copy=False,
-        help='Leave empty to keep the current key. The saved key is never shown again.',
+        help='OpenAI compatible: sent as "Authorization: Bearer". n8n: the signing secret of the '
+             'X-Woow-Signature HMAC (never sent). Leave empty to keep the current key; the saved key '
+             'is never shown again.',
     )
     api_key_set = fields.Boolean(string='API Key Configured', compute='_compute_api_key',
                                  groups='base.group_system')
@@ -99,7 +103,18 @@ class WoowAiContact(models.Model):
                                  groups='base.group_system',
                                  help='Most recent messages sent as context (1-200).')
     timeout_seconds = fields.Integer(string='Timeout (seconds)', default=DEFAULT_TIMEOUT,
-                                     groups='base.group_system')
+                                     groups='base.group_system',
+                                     help='Total time allowed for one answer (5-3600 seconds).')
+    openai_stream = fields.Boolean(
+        string='Stream Replies', default=True, groups='base.group_system',
+        help='OpenAI compatible backends only: ask for a streamed (SSE) answer. Bytes keep flowing while '
+             'the backend works, so proxies such as Cloudflare (about 100 seconds without data) do not '
+             'cut long answers. The call fails when no data arrives for 30 seconds.')
+    max_retries = fields.Integer(
+        string='Retries', default=DEFAULT_MAX_RETRIES, groups='base.group_system',
+        help='Retries (0-2) when the connection fails or the backend answers HTTP 429 or 503, after 3 '
+             'and 10 seconds. Read timeouts and other HTTP errors are never retried: the backend may '
+             'already be running tools.')
     welcome_message = fields.Text(string='Welcome Message', groups='base.group_system',
                                   help='Posted by the AI when a user opens the conversation for the first time.')
     error_message = fields.Text(string='Error Message', groups='base.group_system',
@@ -194,7 +209,7 @@ class WoowAiContact(models.Model):
                     'The endpoint URL must use https (plain http is only allowed for localhost '
                     'and *.svc.cluster.local).'))
 
-    @api.constrains('max_history', 'timeout_seconds', 'max_download_mb')
+    @api.constrains('max_history', 'timeout_seconds', 'max_download_mb', 'max_retries')
     def _check_limits(self):
         for contact in self.sudo():
             if not 1 <= contact.max_history <= MAX_MAX_HISTORY:
@@ -203,6 +218,8 @@ class WoowAiContact(models.Model):
                 raise ValidationError(self.env._('The timeout must be between 5 and 3600 seconds.'))
             if not 1 <= contact.max_download_mb <= MAX_DOWNLOAD_MB:
                 raise ValidationError(self.env._('The maximum file size must be between 1 and 100 MB.'))
+            if not 0 <= contact.max_retries <= MAX_MAX_RETRIES:
+                raise ValidationError(self.env._('Retries must be between 0 and 2.'))
 
     @api.constrains('partner_id')
     def _check_partner(self):
@@ -217,7 +234,7 @@ class WoowAiContact(models.Model):
         category = self.env.ref(BOT_CATEGORY_XMLID, raise_if_not_found=False)
         vals = {
             'name': self.name,
-            'active': True,
+            'active': self._partner_should_be_active(),
             'is_company': False,
             'type': 'contact',
         }
@@ -226,6 +243,21 @@ class WoowAiContact(models.Model):
         if category:
             vals['category_id'] = [(4, category.id)]
         return vals
+
+    def _partner_should_be_active(self):
+        """The bot partner is active only while people can chat with it directly:
+        an archived AI contact, or one without allowed groups (only used by
+        bridges such as Live Chat), keeps it archived (no chat search hit)."""
+        self.ensure_one()
+        contact = self.sudo()
+        return bool(contact.active and contact.allowed_group_ids)
+
+    def _sync_partner_active(self):
+        for contact in self.sudo():
+            partner = contact.partner_id.with_context(active_test=False)
+            should = contact._partner_should_be_active()
+            if partner and partner.active != should:
+                partner.active = should
 
     @api.model_create_multi
     def create(self, vals_list):
@@ -247,10 +279,8 @@ class WoowAiContact(models.Model):
                     contact.partner_id.write(partner_vals)
         if 'log_payload' in vals and not vals['log_payload']:
             self.env['woow.ai.call.log'].sudo()._erase_payloads(self.ids)
-        if 'active' in vals:
-            for contact in self.sudo():
-                if contact.partner_id and contact.partner_id.active != bool(vals['active']):
-                    contact.partner_id.active = bool(vals['active'])
+        if {'active', 'allowed_group_ids'} & set(vals):
+            self._sync_partner_active()
         return res
 
     def copy_data(self, default=None):
@@ -376,7 +406,7 @@ class WoowAiContact(models.Model):
     def _post_text(self, channel, text):
         """Post a markdown text as the AI (no attachments)."""
         self.ensure_one()
-        prepared = self._prepare_reply({'text': text})
+        prepared = self._prepare_reply({'text': text}, channel=channel)
         return self._post_prepared(channel, prepared)
 
     # --- Call logs ---

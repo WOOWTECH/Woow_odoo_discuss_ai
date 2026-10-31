@@ -6,7 +6,9 @@ locked or inside a transaction that may be dropped:
 
 1. ``_prepare_reply`` (no database writes): markdown -> safe HTML; files
    linked in the text or listed in ``attachments`` are downloaded (allowlisted
-   hosts only, size-capped) or decoded (base64), their mimetype sniffed.
+   hosts only, size-capped) or decoded (base64, and ``data:image`` URIs in the
+   text, which need no allowlist), their mimetype sniffed. Hermes ``MEDIA:``
+   paths it could not turn into data are replaced by a note.
 2. ``_post_prepared``: create the ``ir.attachment`` records and post.
 """
 
@@ -29,6 +31,18 @@ MAX_FILES_PER_REPLY = 10
 _MD_LINK_RE = re.compile(
     r'(?P<bang>!?)\[(?P<label>[^\]\n]{0,500})\]\((?P<url>https?://[^\s()<>]{1,2000})(?:\s+"[^"\n]*")?\)')
 
+# data URIs in the text: ![alt](data:...) or bare (Hermes inlines images it made)
+_DATA_URI = r'data:(?P<type>[a-z0-9.+-]+/[a-z0-9.+-]+)(?:;[a-z0-9.+=-]+)*;base64,(?P<data>[A-Za-z0-9+/]+=*)'
+_DATA_URI_RE = re.compile(
+    r'(?:!?\[(?P<label>[^\]\n]{0,500})\]\(\s*' + _DATA_URI + r'\s*(?:"[^"\n]*")?\)|' + _DATA_URI.replace(
+        '?P<type>', '?P<type2>').replace('?P<data>', '?P<data2>') + ')',
+    re.IGNORECASE)
+_DATA_IMAGE_TYPES = ('image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp')
+_IMAGE_EXTENSIONS = {'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp'}
+
+# Hermes "MEDIA:/path" left in the text (a file it could not send)
+_MEDIA_RE = re.compile(r'`?(?<![\w/])MEDIA:[ \t]*[^\s`]+`?')
+
 
 class WoowAiContactReply(models.Model):
     _inherit = 'woow.ai.contact'
@@ -48,12 +62,70 @@ class WoowAiContactReply(models.Model):
         filename = media.clean_filename(name) if name else media.filename_from_url(final_url)
         return {'name': filename, 'raw': raw, 'mimetype': media.safe_mimetype(raw)}
 
-    def _prepare_reply(self, reply):
-        """{'text', 'attachments'} from a backend -> {'html': Markup, 'files': [...]}"""
+    def _reply_note(self, channel, source):
+        """Short note put in the reply text, in the requester's language."""
+        lang = None
+        if channel:
+            try:
+                lang = channel._woow_ai_identity(self).get('lang')
+            except Exception:  # noqa: BLE001 - a note is cosmetic
+                lang = None
+        env = self.with_context(lang=lang or self.env.lang).env
+        notes = {
+            'media': env._('(The AI produced a file that could not be delivered.)'),
+            'image': env._('(An image in the reply could not be attached.)'),
+        }
+        return notes[source]
+
+    def _prepare_reply(self, reply, channel=None):
+        """{'text', 'attachments'} from a backend -> {'html': Markup, 'files': [...], 'warnings': [...]}
+
+        Args:
+            reply (dict): text (markdown) and attachments (n8n format)
+            channel (discuss.channel): where it will be posted (link hosts and
+                note language); None for the default rules
+        """
         self.ensure_one()
         text = strip_think(reply.get('text') or '')
         files = []
+        warnings = []
         domains = self._download_domains()
+        max_bytes = self._max_download_bytes()
+
+        def replace_data_uri(match):
+            declared = (match.group('type') or match.group('type2') or '').lower()
+            data = match.group('data') or match.group('data2') or ''
+            label = match.group('label')
+            reason = 'not an image'
+            if declared in _DATA_IMAGE_TYPES:
+                if len(files) >= MAX_FILES_PER_REPLY:
+                    reason = 'too many files'
+                else:
+                    try:
+                        raw = media.decode_base64(data, max_bytes)
+                    except media.DownloadRefused as e:
+                        reason = str(e)
+                    else:
+                        mimetype = media.safe_mimetype(raw)
+                        if mimetype in media.INLINE_IMAGE_TYPES:
+                            ext = _IMAGE_EXTENSIONS[mimetype]
+                            stem = media.clean_filename(label, default='') if label else ''
+                            name = media.clean_filename(
+                                '%s.%s' % (stem or 'image-%s' % (len(files) + 1), ext))
+                            files.append({'name': name, 'raw': raw, 'mimetype': mimetype})
+                            return name
+                        reason = 'content is %s' % mimetype
+            warnings.append('inline %s not attached (%s)' % (declared or 'data', reason))
+            return self._reply_note(channel, 'image')
+
+        # decision 24: data:image needs no download, so no domain allowlist
+        text = _DATA_URI_RE.sub(replace_data_uri, text)
+
+        def replace_media(match):
+            warnings.append('MEDIA file path in the reply (not delivered)')
+            return self._reply_note(channel, 'media')
+
+        text = _MEDIA_RE.sub(replace_media, text)
 
         def replace_link(match):
             url = match.group('url')
@@ -79,7 +151,7 @@ class WoowAiContactReply(models.Model):
             name = item.get('name') if isinstance(item.get('name'), str) else None
             if isinstance(item.get('data_base64'), str):
                 try:
-                    raw = media.decode_base64(item['data_base64'], self._max_download_bytes())
+                    raw = media.decode_base64(item['data_base64'], max_bytes)
                 except media.DownloadRefused as e:
                     _logger.info("AI contact %s: base64 attachment dropped (%s)", self.id, e)
                     continue
@@ -99,7 +171,8 @@ class WoowAiContactReply(models.Model):
                     extra_links.append('[%s](%s)' % ((name or media.filename_from_url(url)).replace(']', ''), url))
         if extra_links:
             text = (text + '\n\n' + '\n'.join('- %s' % link for link in extra_links)).strip()
-        return {'html': markdown_to_html(text), 'files': files}
+        link_hosts = channel._woow_ai_link_hosts(self) if channel else None
+        return {'html': markdown_to_html(text, link_hosts=link_hosts), 'files': files, 'warnings': warnings}
 
     def _post_prepared(self, channel, prepared):
         """Post a prepared reply in `channel` as the AI; returns the message (or empty)."""

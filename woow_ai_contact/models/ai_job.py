@@ -15,8 +15,10 @@ Flow:
        workers and the cron process
     -> before calling the backend and again before posting, a job that has a
        newer job in the same channel is marked skipped; the newest job
-       answers with the full conversation as context. The checks before
-       posting run with the channel row locked
+       answers with the full conversation as context. A job whose channel is
+       no longer answered by its AI contact (archived, AI turned off, contact
+       changed) is skipped too. The checks before posting run with the
+       channel row locked
     -> while the backend answers, the bot member shows "typing" (refreshed
        every TYPING_REFRESH_SECONDS), switched off when the reply is posted
     -> when the lock holder finishes it runs the newest pending job of the
@@ -297,7 +299,7 @@ class WoowAiJob(models.Model):
         now = fields.Datetime.now()
         if self.create_date and self.create_date < now - timedelta(minutes=JOB_MAX_AGE_MINUTES):
             self._finish('failed', 'not processed within %s minutes, given up' % JOB_MAX_AGE_MINUTES)
-            self._notify_failure('job too old')
+            self._notify_failure('job too old', visitor_told=False)
             commit_step()
             return
         if self.run_count >= MAX_JOB_RUNS:
@@ -323,7 +325,6 @@ class WoowAiJob(models.Model):
             commit_step()
             return
         self.write({'context_message_id': max(context.ids)})
-        requester = channel._woow_ai_requester(contact)
 
         self._set_typing(True)
         commit_step()
@@ -332,20 +333,28 @@ class WoowAiJob(models.Model):
             refresher = _TypingRefresher(self.env.cr.dbname, channel.id, contact.partner_id.id)
             refresher.start()
         try:
-            result = contact._call_backend(channel, history, requester, job=self, before_call=commit_step)
+            result = contact._call_backend(channel, history, job=self, before_call=commit_step)
             prepared = []
             if not result['error'] and not result['skip']:
                 # downloads happen here: no row lock held, nothing written yet
-                prepared = [contact._prepare_reply(reply) for reply in result['replies']]
+                prepared = [contact._prepare_reply(reply, channel=channel) for reply in result['replies']]
         finally:
             if refresher:
                 refresher.stop_event.set()
+        warnings = [w for p in prepared for w in p.get('warnings') or []]
+        if warnings and result.get('call_log'):
+            log = result['call_log']
+            log.write({'error': '; '.join(filter(None, [log.error] + warnings))[:MAX_JOB_ERROR_LENGTH]})
         commit_step()  # the call log
 
         self._lock_channel_row()
         self._set_typing(False)
         if self._has_newer_job():
             self._finish('skipped', 'a newer message arrived; the newest job answers')
+            commit_step()
+            return
+        if not self._contact_still_answers():
+            self._finish('skipped', 'AI turned off or contact changed while the backend answered')
             commit_step()
             return
         if channel._woow_ai_is_paused():
@@ -383,6 +392,8 @@ class WoowAiJob(models.Model):
         contact = self.contact_id.sudo()
         if not contact.active:
             self._finish('skipped', 'AI contact archived')
+        elif not self._contact_still_answers():
+            self._finish('skipped', 'AI turned off or contact changed')
         elif self._has_newer_job():
             self._finish('skipped', 'a newer message arrived; the newest job answers')
         elif self._already_answered():
@@ -395,6 +406,11 @@ class WoowAiJob(models.Model):
             return False
         commit_step()
         return True
+
+    def _contact_still_answers(self):
+        """True while the job's AI contact is still the one answering its channel."""
+        self.ensure_one()
+        return self.channel_id.sudo()._woow_ai_channel_contact() == self.contact_id.sudo()
 
     def _finish_exhausted(self, commit_step):
         if self.kind == 'handoff':
@@ -424,8 +440,8 @@ class WoowAiJob(models.Model):
         contact = self.contact_id.sudo()
         if (contact.error_message or '').strip():
             return contact.error_message.strip()
-        requester = self.channel_id.sudo()._woow_ai_requester(contact)
-        lang = requester.lang or self.env.lang
+        identity = self.channel_id.sudo()._woow_ai_identity(contact)
+        lang = identity.get('lang') or self.env.lang
         return self.with_context(lang=lang).env._(
             'Sorry, I cannot answer right now. Please try again later.')
 
@@ -434,11 +450,19 @@ class WoowAiJob(models.Model):
         contact = self.contact_id.sudo()
         message = contact._post_text(self.channel_id.sudo(), self._error_text())
         self._finish('failed', error, reply_message=message or None)
-        self._notify_failure(error)
+        self._notify_failure(error, visitor_told=True)
 
-    def _notify_failure(self, reason):
-        """Hook for bridges (Live Chat alerts the operators). Core: log only."""
-        _logger.warning("AI job %s (channel %s) failed: %s", self.id, self.channel_id.id, reason)
+    def _notify_failure(self, reason, visitor_told=True):
+        """Hook for bridges (Live Chat alerts the operators). Core: log only.
+
+        Args:
+            reason (str): short technical reason
+            visitor_told (bool): True when the error message was posted in the
+                conversation (``_give_up``); False when the job was dropped
+                silently (too old)
+        """
+        _logger.warning("AI job %s (channel %s) failed (user told: %s): %s",
+                        self.id, self.channel_id.id, visitor_told, reason)
 
     def _has_newer_job(self):
         return bool(self.search_count([('channel_id', '=', self.channel_id.id), ('id', '>', self.id)], limit=1))

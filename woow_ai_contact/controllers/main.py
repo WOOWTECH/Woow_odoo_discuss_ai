@@ -120,12 +120,14 @@ class WoowAiContactController(http.Controller):
             return fail(400 if error in ('invalid_recipient', 'ambiguous_recipient') else 404, error)
         if not contact._user_allowed(user):
             return fail(403, 'not_allowed')
+        # rendered with the default rules (the chat may not exist yet)
         prepared = contact._prepare_reply({'text': text, 'attachments': attachments})
         if not str(prepared['html']).strip() and not prepared['files']:
             return fail(400, 'empty_message', 'no text and no usable attachment')
         chat, _created = contact._get_or_create_chat(user)
         message = contact._post_prepared(chat, prepared)
-        contact._create_call_log(chat, None, {'status': 'ok', 'http_status': 200, 'error': None,
+        warnings = '; '.join(prepared.get('warnings') or []) or None
+        contact._create_call_log(chat, None, {'status': 'ok', 'http_status': 200, 'error': warnings,
                                               'request': None, 'response': None},
                                  int((time.time() - started) * 1000), backend_type='push')
         return _json_response({'ok': True, 'channel_id': chat.id, 'message_id': message.id})
