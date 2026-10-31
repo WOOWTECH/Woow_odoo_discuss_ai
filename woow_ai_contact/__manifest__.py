@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'AI Contacts for Discuss',
-    'version': '18.0.1.1.0',
+    'version': '18.0.1.2.0',
     'category': 'Productivity/Discuss',
     'summary': 'Chat one-to-one with AI contacts (Hermes, LiteLLM, n8n) in Discuss and the portal',
     'description': """
@@ -18,8 +18,9 @@ Each AI contact is a bot partner connected to an OpenAI compatible backend
 * "typing" indicator while the backend answers, 5 minute default timeout;
   OpenAI compatible answers streamed (SSE) so proxies do not cut long answers
 * Attachments both ways: user images inlined for OpenAI compatible backends,
-  other files as signed 1-hour download links; files in AI replies are
-  attached from allowlisted domains
+  documents (PDF, xlsx, xls, docx, csv, txt, md, json) sent as PDF file parts
+  or text read by Odoo, other files as signed 1-hour download links; files in
+  AI replies are attached from allowlisted domains
 * Markdown replies (tables, lists, code) rendered to safe HTML
 * Push API: backends can message users first (one push key per AI contact)
 * Discuss sidebar "AI Contacts" section and portal /my/ai entry

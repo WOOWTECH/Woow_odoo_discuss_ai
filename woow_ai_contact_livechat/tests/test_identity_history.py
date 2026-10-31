@@ -270,7 +270,19 @@ class TestLinksAndFiles(LivechatCase):
         parts = {part['type']: part for part in last['content']}
         self.assertTrue(parts['image_url']['image_url']['url'].startswith('data:image/png;base64,'))
         self.assertIn('spec.pdf', parts['text']['text'])
-        self.assertIn('/woow_ai/attachment/%s/' % pdf.id, parts['text']['text'])
+        self.assertEqual(parts['file']['file']['filename'], 'spec.pdf')  # document_mode file (default)
+        # document_mode link: the signed link
+        self.contact.document_mode = 'link'
+        self.post(session, self.visitor, '再看一次')
+        with patch(BACKEND_POST, return_value=openai_ok('好')) as post:
+            self.run_job(self.jobs(session)[-1])
+        earlier = next(m for m in self.request_body(post)['messages'] if 'spec.pdf' in self.text_parts(m))
+        self.assertIn('/woow_ai/attachment/%s/' % pdf.id, self.text_parts(earlier))
+
+    @staticmethod
+    def text_parts(turn):
+        content = turn['content']
+        return content if isinstance(content, str) else '\n'.join(p.get('text', '') for p in content)
 
     def test_ai_off_closes_signed_downloads(self):
         session = self.new_session(visitor=self.visitor)

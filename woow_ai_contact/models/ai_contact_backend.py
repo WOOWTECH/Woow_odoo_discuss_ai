@@ -21,7 +21,7 @@ from urllib3.exceptions import MaxRetryError, NewConnectionError, ReadTimeoutErr
 
 from odoo import api, models
 
-from ..tools import media
+from ..tools import documents, media
 
 _logger = logging.getLogger(__name__)
 
@@ -29,6 +29,15 @@ INLINE_IMAGE_MAX_BYTES = 5 * 1024 * 1024
 INLINE_IMAGE_MESSAGES = 3  # the most recent user messages whose images may be inlined
 INLINE_IMAGE_MAX_COUNT = 4  # images inlined per request
 INLINE_IMAGE_BUDGET = 7 * 1024 * 1024  # data URI characters per request (Hermes caps requests at 10 MB)
+# User documents (document_mode, docs/PROTOCOL.md "Documents"); PDF file parts
+# share INLINE_IMAGE_BUDGET with the images
+DOC_MESSAGES = 5  # the most recent user messages whose documents are read
+DOC_MAX_COUNT = 5  # documents read per request
+DOC_MAX_BYTES = 10 * 1024 * 1024  # larger documents are not opened
+DOC_FILE_MAX_BYTES = 4 * 1024 * 1024  # a larger PDF is sent as its text instead of a file part
+DOC_TEXT_MAX_CHARS = 40000  # extracted characters per document
+DOC_TEXT_BUDGET = 100000  # extracted characters per request
+DOC_TEXT_MIN_CHARS = 1000  # a document is skipped when less than this is left of the budget
 CONNECT_TIMEOUT = 10
 STREAM_IDLE_TIMEOUT = 30  # seconds without any byte from a streamed answer
 RETRY_WAITS = (3, 10)  # seconds before the 1st / 2nd retry
@@ -208,6 +217,13 @@ class _StreamWatchdog:
             _logger.debug("could not cut a streamed answer at its deadline", exc_info=True)
 
 
+def attachment_raw(attachment):
+    """Content of one attachment. ``raw`` is computed: read through the history's
+    shared prefetch set it would load the files of every attachment in the
+    context, so it is read with a prefetch set of this record only."""
+    return attachment.with_prefetch(attachment._ids).raw or b''
+
+
 def _int_or_zero(value):
     return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
 
@@ -340,7 +356,7 @@ class WoowAiContactBackend(models.Model):
                 if (attachment.mimetype not in media.INLINE_IMAGE_TYPES
                         or (attachment.file_size or 0) > INLINE_IMAGE_MAX_BYTES):
                     continue
-                raw = attachment.raw or b''
+                raw = attachment_raw(attachment)
                 if not raw or len(raw) > INLINE_IMAGE_MAX_BYTES:
                     continue
                 mimetype = media.sniff_mimetype(raw)
@@ -354,26 +370,148 @@ class WoowAiContactBackend(models.Model):
                 chosen[(position, attachment.id)] = uri
         return chosen
 
+    @staticmethod
+    def _document_note(name, reason):
+        """Line telling the model what happened to a document (it never sees an empty gap)."""
+        return '[附件說明] %s：%s' % (name, reason)
+
+    def _inline_documents(self, history, mode, data_budget):
+        """Documents of user messages for an openai request (docs/PROTOCOL.md "Documents").
+
+        Returns {(history position, attachment id): {'kind', 'text', 'file', 'note'}}:
+        ``file`` an OpenAI ``file`` content part (PDF, mode ``file``), ``text``
+        the extracted text (other documents, every document in mode ``text``),
+        ``note`` a line for the model when a document was skipped or cut.
+        Attachments that are not documents (images, zip, video...) get no entry.
+
+        Only documents of the DOC_MESSAGES most recent user messages are read,
+        newest first: at most DOC_MAX_COUNT documents, DOC_TEXT_MAX_CHARS
+        characters each and DOC_TEXT_BUDGET in total; PDF file parts at most
+        DOC_FILE_MAX_BYTES each and ``data_budget`` data URI characters in
+        total (shared with the inlined images; a PDF that does not fit is sent
+        as its text). Assistant messages are never read.
+        """
+        found = {}
+        if mode not in ('file', 'text'):
+            return found
+        user_positions = [i for i, entry in enumerate(history) if entry['role'] == 'user']
+        recent = set(user_positions[-DOC_MESSAGES:])
+        text_budget = DOC_TEXT_BUDGET
+        count = 0
+        for position in reversed(user_positions):
+            for attachment in history[position]['attachments'].sudo():
+                name = attachment.name or 'file'
+                if not documents.is_candidate(name, attachment.mimetype):
+                    continue
+                key = (position, attachment.id)
+                if position not in recent:
+                    found[key] = {'note': self._document_note(
+                        name, '在較早的訊息中，這次沒有再附上內容（需要時請使用者重新上傳）。')}
+                    continue
+                if count >= DOC_MAX_COUNT:
+                    found[key] = {'note': self._document_note(
+                        name, '內容沒有附上：每次最多附上 %s 個文件的內容。' % DOC_MAX_COUNT)}
+                    continue
+                if (attachment.file_size or 0) > DOC_MAX_BYTES:
+                    found[key] = {'note': self._document_note(
+                        name, '檔案太大（%s，上限 %s），沒有讀取內容。' % (
+                            media.human_size(attachment.file_size), media.human_size(DOC_MAX_BYTES)))}
+                    continue
+                raw = attachment_raw(attachment)
+                kind = documents.document_kind(name, raw, attachment.mimetype)
+                if not kind or len(raw) > DOC_MAX_BYTES:
+                    continue  # not a readable document: the link line only, as before
+                count += 1
+                notes = []
+                if kind == documents.PDF and mode == 'file':
+                    uri_length = len('data:application/pdf;base64,') + 4 * ((len(raw) + 2) // 3)
+                    if len(raw) <= DOC_FILE_MAX_BYTES and uri_length <= data_budget:
+                        data_budget -= uri_length
+                        found[key] = {'kind': kind, 'file': {'type': 'file', 'file': {
+                            'filename': name,
+                            'file_data': 'data:application/pdf;base64,' + base64.b64encode(raw).decode(),
+                        }}}
+                        continue
+                    notes.append(self._document_note(name, 'PDF 太大，無法直接附上檔案，改附 Odoo 擷取的文字。'))
+                limit = min(DOC_TEXT_MAX_CHARS, text_budget)
+                if limit < DOC_TEXT_MIN_CHARS:
+                    found[key] = {'note': self._document_note(
+                        name, '內容沒有附上：這次請求的文件內容額度（%s 字）已用完。' % DOC_TEXT_BUDGET)}
+                    continue
+                try:
+                    text, truncated = documents.extract(kind, raw, limit, name=name)
+                except documents.DocumentError as e:
+                    found[key] = {'note': self._document_note(name, '無法讀取內容（%s）。' % e)}
+                    continue
+                except Exception as e:  # noqa: BLE001 - a bad file must never fail the reply
+                    _logger.warning("AI contact %s: could not read attachment %s (%s)", self.ids, attachment.id,
+                                    type(e).__name__, exc_info=True)
+                    found[key] = {'note': self._document_note(name, '無法讀取內容（%s）。' % type(e).__name__)}
+                    continue
+                if not text.strip():
+                    reason = ('這個 PDF 沒有文字層（可能是掃描檔或圖片），擷取不到文字。' if kind == documents.PDF
+                              else '檔案裡沒有文字內容。')
+                    found[key] = {'note': self._document_note(name, reason)}
+                    continue
+                text_budget -= len(text)
+                if truncated:
+                    notes.append(self._document_note(
+                        name, '內容太長，只附上前 %s 字（每個文件上限 %s 字、每次請求共 %s 字）。' % (
+                            len(text), DOC_TEXT_MAX_CHARS, DOC_TEXT_BUDGET)))
+                found[key] = {'kind': kind, 'text': text, 'note': '\n'.join(notes) or None,
+                              'truncated': truncated}
+        return found
+
+    @staticmethod
+    def _document_block(attachment, doc):
+        language = {documents.XLSX: 'markdown', documents.XLS: 'markdown', documents.DOCX: '',
+                    documents.PDF: ''}.get(doc['kind'])
+        if language is None:
+            language = documents.text_language(attachment.name)
+        header = '[附件內容] %s（%s，%s）：以下是 Odoo 從檔案擷取的文字' % (
+            attachment.name or 'file', attachment.mimetype or 'application/octet-stream',
+            media.human_size(attachment.file_size))
+        return header + '\n' + documents.fenced(doc['text'], language)
+
     def _openai_messages(self, channel, history, identity, base_url):
         self.ensure_one()
         contact = self.sudo()
         system = [part for part in (channel._woow_ai_system_prompt(contact, history),
                                     contact._identity_system_text(identity)) if part]
         inline = self._inline_images(history)
+        data_budget = INLINE_IMAGE_BUDGET - sum(len(uri) for uri in inline.values())
+        docs = self._inline_documents(history, contact.document_mode or 'link', data_budget)
         turns = []
         for position, entry in enumerate(history):
             lines = [entry['text']] if entry['text'] else []
             images = []
+            files = []
             for attachment in entry['attachments'].sudo():
-                uri = inline.get((position, attachment.id))
+                key = (position, attachment.id)
+                uri = inline.get(key)
+                doc = docs.get(key)
                 if uri:
                     images.append(uri)
+                elif doc and doc.get('file'):
+                    files.append(doc['file'])
+                    lines.append('[附件] %s（%s，%s）：檔案已附在這則訊息' % (
+                        attachment.name or 'file', attachment.mimetype or 'application/octet-stream',
+                        media.human_size(attachment.file_size)))
+                elif doc and doc.get('text'):
+                    lines.append(self._document_block(attachment, doc))
+                    if doc.get('note'):
+                        lines.append(doc['note'])
+                    if doc.get('truncated'):
+                        lines.append(self._attachment_line(self._attachment_info(attachment, base_url)))
                 else:
                     lines.append(self._attachment_line(self._attachment_info(attachment, base_url)))
+                    if doc and doc.get('note'):
+                        lines.append(doc['note'])
             text = '\n'.join(lines)
-            if images:
+            if images or files:
                 content = [{'type': 'text', 'text': text}] if text else []
                 content += [{'type': 'image_url', 'image_url': {'url': uri}} for uri in images]
+                content += files
             else:
                 content = text
             turns.append({'role': entry['role'], 'content': content})

@@ -120,6 +120,7 @@ class TestOpenAiJob(AiContactCase):
         self.assertEqual([m['content'] for m in messages[1:]], ['b', 'c'])
 
     def test_images_inlined_for_last_three_user_messages(self):
+        self.contact.document_mode = 'link'  # documents as signed links (test_documents covers the others)
         chat = self.chat(self.internal)
         for i in range(4):
             att = self.attachment(chat, self.internal, name='p%s.png' % i)
@@ -138,7 +139,7 @@ class TestOpenAiJob(AiContactCase):
         self.assertIsInstance(messages[2]['content'], list)
         self.assertEqual(messages[2]['content'][0], {'type': 'text', 'text': 'pic 2'})
         self.assertTrue(messages[2]['content'][1]['image_url']['url'].startswith('data:image/png;base64,'))
-        self.assertIsInstance(messages[4]['content'], str)  # the PDF is never inlined
+        self.assertIsInstance(messages[4]['content'], str)  # document_mode link: the PDF is a link
         self.assertIn('[附件] 報價.pdf（application/pdf', messages[4]['content'])
         token = messages[4]['content'].rsplit('/', 1)[1]
         self.assertTrue(media.check_token(self.env['woow.ai.contact']._signing_secret(),

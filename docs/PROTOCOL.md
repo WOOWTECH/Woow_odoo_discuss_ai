@@ -57,7 +57,11 @@ Every call carries:
   add fields (Live Chat: `is_guest`, `guest_id`, `visitor_key`).
 - **user attachments** as `ATT` objects. `url` is a signed download link valid
   for one hour (`GET`, no cookie needed; only attachments of messages in AI
-  chats are ever signed):
+  chats are ever signed). The link is built from the system parameter
+  `web.base.url`: it must be the **public** address of Odoo (a backend outside
+  the cluster cannot reach `http://localhost:8069`; the real-LLM acceptance
+  sandbox had exactly that). Odoo resets `web.base.url` at each admin login
+  unless `web.base.url.freeze` is set.
 
 ```json
 {"id": 12, "name": "報價.xlsx", "mimetype": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -150,11 +154,16 @@ Accept: text/event-stream
   "model": "gpt-example",
   "messages": [
     {"role": "system", "content": "你是 WoowTech 的產品顧問。\n\nYou are chatting in Odoo with this person (information only, no login is delegated):\n- name: 王小明\n- language: zh_TW\n- timezone: Asia/Taipei\n- account: portal user (customer)\n- user_id: 7\n- partner_id: 15"},
-    {"role": "user", "content": "[附件] 規格.pdf（application/pdf，120.4 KB）：https://odoo.example.com/woow_ai/attachment/31/1793433600.9be2…"},
+    {"role": "user", "content": "[附件] 規格.zip（application/zip，120.4 KB）：https://odoo.example.com/woow_ai/attachment/31/1793433600.9be2…"},
     {"role": "assistant", "content": "收到規格書，請問想了解哪個型號？"},
     {"role": "user", "content": [
       {"type": "text", "text": "這個型號多少錢？"},
       {"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw0KGgo…"}}
+    ]},
+    {"role": "assistant", "content": "這是 A1，售價 NT$1,520。"},
+    {"role": "user", "content": [
+      {"type": "text", "text": "比較這兩份\n[附件] 型錄.pdf（application/pdf，88.0 KB）：檔案已附在這則訊息\n[附件內容] 報價.xlsx（application/vnd.openxmlformats-officedocument.spreadsheetml.sheet，9.8 KB）：以下是 Odoo 從檔案擷取的文字\n```markdown\n## Sheet: 報價\n| | A | B |\n|---|---|---|\n| 1 | 型號 | 價格 |\n| 2 | A1 | 1520 |\n```"},
+      {"type": "file", "file": {"filename": "型錄.pdf", "file_data": "data:application/pdf;base64,JVBERi0xLjQK…"}}
     ]}
   ],
   "user": "woow-ai-0edfec80-42",
@@ -179,7 +188,9 @@ Accept: text/event-stream
 - Images (`image/png`, `image/jpeg`, `image/gif`, `image/webp`, type checked
   on the content, at most 5 MB each) are inlined as data URIs only for the
   **3 most recent user messages**, newest first, at most **4 images and about
-  7 MB of data URIs per request** (Hermes refuses requests over 10 MB). Every
+  7 MB of data URIs per request** (Hermes refuses requests over 10 MB).
+  Documents (PDF, xlsx, xls, docx, csv, txt, md, json) follow the AI
+  contact's *Documents Users Send* setting (see "Documents" below). Every
   other file, and every image over these limits, becomes a text line
   `[附件] <name>（<mimetype>，<size>）：<signed url>`.
 - `metadata` holds strings only (at most 16 keys, 512 characters each), as the
@@ -189,6 +200,60 @@ Accept: text/event-stream
   of the streamed answer (without it the call log shows 0 tokens); servers that
   do not know it ignore it (Hermes sends usage in its last chunk anyway).
 - No `tools` are sent: tools (e.g. the Odoo MCP server) belong to the backend.
+
+### Documents
+
+Models do not open download links (the acceptance run: a PDF and an xlsx sent
+as links were "unreadable"). For `openai` backends Odoo therefore puts the
+content of the documents users send into the request, depending on the AI
+contact's **Documents Users Send** (`document_mode`, *Files* tab):
+
+| `document_mode` | PDF | xlsx / xls / docx / csv / tsv / txt / md / json | Use with |
+|---|---|---|---|
+| `file` (default) | an OpenAI `file` content part: `{"type": "file", "file": {"filename": "…", "file_data": "data:application/pdf;base64,…"}}` | text read by Odoo | LiteLLM, OpenAI (checked 2026-11-01 against the company LiteLLM `chatgpt-pool/gpt-6-sol`: the model read the PDF) |
+| `text` | the PDF's text layer, read by Odoo | text read by Odoo | Hermes and other servers that do not accept `file` parts |
+| `link` | signed link only | signed link only | the 18.0.1.1.0 behaviour (the backend downloads the file itself) |
+
+Upgrading to 18.0.1.2.0 sets `text` on existing `openai` contacts without a
+model (Hermes ignores the model, so Hermes contacts leave it empty) and `file`
+on the others.
+
+What the model sees, in the user turn of the message that carried the file:
+
+- text: a header line `[附件內容] <name>（<mimetype>，<size>）：以下是 Odoo 從檔案擷取的文字`
+  and a fenced block. Spreadsheets: one markdown table per sheet (`## Sheet:
+  <name>`) with column letters and row numbers, so `B1` keeps its meaning
+  (cached values of formulas; at most 5,000 rows and 50 columns per sheet).
+  docx: paragraphs and tables. csv / txt / md / json: the file as it is (UTF-8,
+  UTF-16 with BOM or Big5 / cp950). PDF (mode `text`, or a PDF too large for a
+  file part): its text layer, at most 100 pages.
+- `file`: the line `[附件] <name>（<mimetype>，<size>）：檔案已附在這則訊息`
+  in the text part and the `file` part after the text (and images).
+- whenever a document is skipped or cut, a line
+  `[附件說明] <name>：<reason>` and the usual signed link line: content cut
+  (`內容太長，只附上前 N 字…`), the request's document budget used up, more than
+  5 documents, file over 10 MB, a document of an older message, a PDF without
+  a text layer (a scan: `這個 PDF 沒有文字層（可能是掃描檔或圖片），擷取不到文字。`),
+  an unreadable file (corrupt, encrypted).
+
+Limits (constants in `models/ai_contact_backend.py`):
+
+| Limit | Value |
+|---|---|
+| messages whose documents are read | the 5 most recent **user** messages, newest first (documents of AI / bot messages are never read) |
+| documents per request | 5 |
+| file size read at all | 10 MB |
+| text per document / per request | 40,000 / 100,000 characters |
+| PDF as a `file` part | ≤ 4 MB each, and within the 7 MB data budget shared with inlined images; otherwise its text is sent (with a note) |
+
+The type is detected from the content (the file name only separates a
+spreadsheet or docx from a plain zip, and names text files); active types
+(HTML, SVG, XML, JavaScript) are never read and stay links. Images, video,
+zip, pptx and other files stay as before. Requests stay under Hermes' 10 MB
+cap: at most 7 MB of data URIs plus about 300 KB of document text.
+
+`n8n` backends are unchanged: every attachment is an `ATT` object with a
+signed link (the workflow downloads it and may read it with its own nodes).
 
 ### Response
 

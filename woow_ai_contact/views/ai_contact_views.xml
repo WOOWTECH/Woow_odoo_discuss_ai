@@ -102,7 +102,14 @@
                             </group>
                         </page>
                         <page string="Files" name="files">
-                            <group>
+                            <group string="Files Users Send" name="user_files" invisible="backend_type != 'openai'">
+                                <field name="document_mode" widget="radio"/>
+                            </group>
+                            <div class="text-muted mb-3" invisible="backend_type != 'openai'">
+                                Images are always sent inline. n8n backends get every attachment as a signed
+                                download link (the workflow downloads it).
+                            </div>
+                            <group string="Files in AI Replies" name="reply_files">
                                 <field name="download_domains" placeholder="files.example.com&#10;*.cdn.example.com"/>
                                 <field name="max_download_mb"/>
                             </group>

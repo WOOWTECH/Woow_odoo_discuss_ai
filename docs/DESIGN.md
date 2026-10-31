@@ -32,6 +32,7 @@ Odoo 18。讓內部用戶與 portal 用戶在 Discuss 裡和「AI 聯絡人」�
 | `openai_stream` | 預設 True；openai 型要求 SSE 串流（定案 21） | 系統管理員 |
 | `max_retries` | 預設 1，0–2；只對連線失敗、HTTP 429、503（定案 26） | 系統管理員 |
 | `welcome_message`、`error_message` | 第一次開對話的招呼語、失敗時的回覆 | 系統管理員 |
+| `document_mode` | 18.0.1.2.0 起；openai 型的使用者文件怎麼給模型：`file`（預設，PDF 用 OpenAI `file` 內容、其他文件由 Odoo 擷取文字）、`text`（全部擷取文字，Hermes 用）、`link`（只給簽名網址，舊行為）；細節與上限見 PROTOCOL.md「Documents」 | 系統管理員 |
 | `download_domains` | AI 回覆中可下載成附件的網域白名單（每行一個，精確主機名或 `*.example.com`） | 系統管理員 |
 | `max_download_mb` | 預設 20 | 系統管理員 |
 | `push_key_hash`、`push_key_hint` | 推送 API 金鑰（只存 sha256；「產生推送金鑰」按鈕只顯示一次） | 系統管理員 |
@@ -102,6 +103,7 @@ Accept: text/event-stream                 # 串流時
 ```
 - **messages 正規化**：一定以 user 開頭、以 user 結尾（Hermes 把最後一項當這次的輸入；Anthropic 類模型會把尾端 assistant 當預填續寫）。第一則 user 之前的 assistant（歡迎訊息）丟掉；最後一則 user 之後的 assistant（推送、拒絕、錯誤訊息）移到它前面；若因此變成 assistant 開頭（只有一則 user），把那幾則包成一則 user 前言「[Messages you (the assistant) sent before this user message]」。
 - 歷史中的使用者附件：圖片（每張 ≤5 MB，**內嵌前用 `guess_mimetype(raw)` 再確認**是 image/png|jpeg|gif|webp，不信上傳時的 mimetype）只在**最近 3 則**使用者訊息內嵌為 `image_url` data URI，從最新的開始，**每次請求最多 4 張、data URI 總長約 7 MB**（Hermes 請求上限 10 MB；不然一則訊息傳 10 張，之後每次請求都會失敗直到滑出最近 3 則）。其餘附件、超出上限的圖片改成文字行 `[附件] 檔名（類型，大小）：簽名網址`。
+- 文件（18.0.1.2.0，真 LLM 驗收發現模型不會開簽名網址）：依 `document_mode` 在最近 5 則使用者訊息內，從最新的開始，最多 5 個文件：PDF 用 `file` 內容（≤4 MB，和圖片共用約 7 MB 的 data URI 額度，放不下就改送文字），xlsx／xls／docx／csv／txt／md／json（`file`、`text` 模式）與 PDF（`text` 模式）由 `tools/documents.py` 擷取文字（每檔 4 萬字、每次請求共 10 萬字），略過或截斷時加一行 `[附件說明]` 並保留簽名網址。只讀附件時用單筆 prefetch 讀 `raw`（`raw` 是 compute 欄位，經整段上下文共用的 prefetch 讀會把所有附件的檔案都讀進來）。
 - 回覆：串流（`text/event-stream`）時略過 `:` 開頭的行（keepalive）與 `event:` 不是預設 message 的事件（如 `hermes.tool.progress`），累積 `delta.content`、忽略 `reasoning_content`，讀到 `[DONE]` 結束；沒有 `[DONE]` 也沒有 `finish_reason` 就斷了 → invalid_response；chunk 帶 `error` → invalid_response。後端不理 `stream` 而回 JSON 也接受。非串流取 `choices[0].message.content`（字串，或 content parts 中的 text）。`usage` 記進呼叫紀錄（不送 `stream_options`，串流時只有後端自己附才有）。
 - 不送 `tools`；工具全部由後端自己處理（Hermes／n8n 用 Odoo MCP）。Hermes 不讀 `user`、`metadata`，身分只能靠 system 區塊。
 
