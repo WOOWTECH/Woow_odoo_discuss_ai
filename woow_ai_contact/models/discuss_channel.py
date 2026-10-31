@@ -156,7 +156,7 @@ class DiscussChannel(models.Model):
         return self.env['woow.ai.job']._create_for_message(self, contact, message, kind=kind)
 
     def _woow_ai_refusal_text(self, message):
-        lang = message.author_id.sudo().lang or self.env.lang
+        lang = self.env['woow.ai.contact']._installed_lang(message.author_id.sudo().lang)
         return self.with_context(lang=lang).env._('You do not have permission to use this AI contact.')
 
     # --- History ---

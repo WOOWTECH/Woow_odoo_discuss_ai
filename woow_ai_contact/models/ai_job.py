@@ -657,9 +657,12 @@ class WoowAiJob(models.Model):
         contact = self.contact_id.sudo()
         if (contact.error_message or '').strip():
             return contact.error_message.strip()
-        identity = self.channel_id.sudo()._woow_ai_identity(contact)
-        lang = identity.get('lang') or self.env.lang
-        return self.with_context(lang=lang).env._(
+        try:
+            lang = self.channel_id.sudo()._woow_ai_identity(contact).get('lang')
+        except Exception:  # noqa: BLE001 - the error message must always be posted
+            _logger.warning("AI job %s: no identity language for the error message", self.id, exc_info=True)
+            lang = None
+        return self.with_context(lang=contact._installed_lang(lang)).env._(
             'Sorry, I cannot answer right now. Please try again later.')
 
     def _give_up(self, error):

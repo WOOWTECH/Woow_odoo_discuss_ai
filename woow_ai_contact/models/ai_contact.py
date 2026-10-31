@@ -461,7 +461,19 @@ class WoowAiContact(models.Model):
         prepared = self._prepare_reply({'text': text}, channel=channel)
         return self._post_prepared(channel, prepared)
 
-    # --- Reply processing ---
+    # --- Languages and reply processing ---
+
+    @api.model
+    def _installed_lang(self, *codes):
+        """First of `codes` that is an installed language, else the current
+        language or en_US. Translating with an uninstalled code raises
+        "Invalid language code" (UserError), which would abort _give_up and
+        leave the job 'running'."""
+        installed = {code for code, _name in self.env['res.lang'].get_installed()}
+        for code in codes + (self.env.context.get('lang'),):
+            if code and code in installed:
+                return code
+        return 'en_US'
 
     @api.depends_context('uid')
     def _compute_job_runner_info(self):

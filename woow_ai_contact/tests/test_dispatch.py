@@ -443,3 +443,23 @@ class TestDispatchModel(AiContactCase):
             self.assertEqual(self.Job.with_context(cron_id=1)._cron_run_jobs(), 3)
         rec.assert_called_once()
         dispatcher.assert_not_called()
+
+    # --- language of the default messages ---
+
+    def test_uninstalled_identity_language_falls_back(self):
+        chat = self.chat(self.internal)
+        self.post(chat, self.internal, 'x')
+        job = self.jobs(chat)
+        identity = dict(self.contact._identity(self.internal.partner_id), lang='fr_BE')
+        self.assertFalse(self.env['res.lang']._get_data(code='fr_BE'))
+        with patch.object(type(chat), '_woow_ai_identity', return_value=identity), \
+                patch(BACKEND_POST, side_effect=[refused(), refused()]), \
+                patch('odoo.addons.woow_ai_contact.models.ai_contact_backend.time.sleep'):
+            job._run_job(commit=False)
+            note = self.contact._reply_note(chat, 'media')
+        self.assertEqual(job.state, 'failed', job.error)  # _give_up did not raise
+        self.assertIn('Sorry, I cannot answer right now', job.reply_message_id.body)
+        self.assertIn('could not be delivered', note)
+        self.assertEqual(self.contact._installed_lang('fr_BE', 'en_US'), 'en_US')
+        self.assertEqual(self.contact._installed_lang(None), 'en_US')
+

@@ -70,7 +70,7 @@ class WoowAiContactReply(models.Model):
                 lang = channel._woow_ai_identity(self).get('lang')
             except Exception:  # noqa: BLE001 - a note is cosmetic
                 lang = None
-        env = self.with_context(lang=lang or self.env.lang).env
+        env = self.with_context(lang=self._installed_lang(lang)).env
         notes = {
             'media': env._('(The AI produced a file that could not be delivered.)'),
             'image': env._('(An image in the reply could not be attached.)'),
