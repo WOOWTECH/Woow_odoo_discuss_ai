@@ -212,6 +212,27 @@ def _int_or_zero(value):
     return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
 
 
+def usage_tokens(usage):
+    """(prompt, completion, total) tokens of an OpenAI ``usage`` object; also
+    accepts ``input_tokens`` / ``output_tokens``; total = sum when missing."""
+    if not isinstance(usage, dict):
+        return 0, 0, 0
+    prompt = _int_or_zero(usage.get('prompt_tokens')) or _int_or_zero(usage.get('input_tokens'))
+    completion = _int_or_zero(usage.get('completion_tokens')) or _int_or_zero(usage.get('output_tokens'))
+    total = _int_or_zero(usage.get('total_tokens')) or prompt + completion
+    return prompt, completion, total
+
+
+def _pick_usage(current, new):
+    """Usage of a stream: the last chunk carrying one, unless it is empty and an
+    earlier chunk had real counts (some servers repeat ``usage`` with zeros)."""
+    if not isinstance(new, dict):
+        return current
+    if current and any(usage_tokens(current)) and not any(usage_tokens(new)):
+        return current
+    return new
+
+
 class WoowAiContactBackend(models.Model):
     _inherit = 'woow.ai.contact'
 
@@ -383,6 +404,10 @@ class WoowAiContactBackend(models.Model):
                 payload = {'model': contact.model.strip(), **payload}
             if contact.openai_stream:
                 payload['stream'] = True
+                # usage of a streamed answer (a last chunk with empty "choices"):
+                # LiteLLM and OpenAI send it only when asked; servers that do not
+                # know the option ignore it (Hermes sends usage anyway)
+                payload['stream_options'] = {'include_usage': True}
                 headers['Accept'] = 'text/event-stream'
             body = _json_dumps(payload).encode()
         else:
@@ -494,8 +519,7 @@ class WoowAiContactBackend(models.Model):
                 return
             if chunk.get('error'):
                 raise BackendError('invalid_response', 'invalid response: error in the stream')
-            if isinstance(chunk.get('usage'), dict):
-                state['usage'] = chunk['usage']
+            state['usage'] = _pick_usage(state['usage'], chunk.get('usage'))
             for choice in chunk.get('choices') or []:
                 if not isinstance(choice, dict):
                     continue
@@ -774,7 +798,7 @@ class WoowAiContactBackend(models.Model):
     def _create_call_log(self, channel, job, log, duration_ms, backend_type=None):
         self.ensure_one()
         contact = self.sudo()
-        usage = log.get('usage') if isinstance(log.get('usage'), dict) else {}
+        prompt_tokens, completion_tokens, total_tokens = usage_tokens(log.get('usage'))
         vals = {
             'contact_id': contact.id,
             'channel_id': channel.id if channel else False,
@@ -784,9 +808,9 @@ class WoowAiContactBackend(models.Model):
             'http_status': log['http_status'] or 0,
             'duration_ms': duration_ms,
             'error': (log['error'] or '')[:MAX_ERROR_LENGTH] or False,
-            'prompt_tokens': _int_or_zero(usage.get('prompt_tokens')),
-            'completion_tokens': _int_or_zero(usage.get('completion_tokens')),
-            'total_tokens': _int_or_zero(usage.get('total_tokens')),
+            'prompt_tokens': prompt_tokens,
+            'completion_tokens': completion_tokens,
+            'total_tokens': total_tokens,
         }
         if contact.log_payload:
             if log['request'] is not None:

@@ -161,7 +161,8 @@ Accept: text/event-stream
   "metadata": {"session_id": "woow-ai-0edfec80-42", "odoo_user_id": "7", "odoo_partner_id": "15",
                "odoo_name": "王小明", "odoo_email": "user@example.com", "odoo_lang": "zh_TW",
                "odoo_tz": "Asia/Taipei", "odoo_is_portal": "true", "odoo_company_id": "1"},
-  "stream": true
+  "stream": true,
+  "stream_options": {"include_usage": true}
 }
 ```
 
@@ -183,7 +184,10 @@ Accept: text/event-stream
   `[附件] <name>（<mimetype>，<size>）：<signed url>`.
 - `metadata` holds strings only (at most 16 keys, 512 characters each), as the
   OpenAI API requires; it is informational.
-- `stream` is sent only while *Stream Replies* is on.
+- `stream` and `stream_options: {"include_usage": true}` are sent only while
+  *Stream Replies* is on. The option asks LiteLLM / OpenAI for the token usage
+  of the streamed answer (without it the call log shows 0 tokens); servers that
+  do not know it ignore it (Hermes sends usage in its last chunk anyway).
 - No `tools` are sent: tools (e.g. the Odoo MCP server) belong to the backend.
 
 ### Response
@@ -200,7 +204,9 @@ data: {"choices": [{"delta": {"reasoning_content": "…"}}]}
 
 data: {"choices": [{"delta": {"content": "這款目前"}}]}
 
-data: {"choices": [{"delta": {"content": "售價如下…"}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 812, "completion_tokens": 64, "total_tokens": 876}}
+data: {"choices": [{"delta": {"content": "售價如下…"}, "finish_reason": "stop"}]}
+
+data: {"choices": [], "usage": {"prompt_tokens": 812, "completion_tokens": 64, "total_tokens": 876}}
 
 data: [DONE]
 ```
@@ -222,8 +228,11 @@ list of `{"type": "text"}` parts).
 ```
 
 `usage` (when given) is stored in the call log (`prompt_tokens`,
-`completion_tokens`, `total_tokens`; 0 when missing). Streams carry usage only
-when the backend adds it by itself (Odoo does not send `stream_options`).
+`completion_tokens`, `total_tokens`; `input_tokens` / `output_tokens` are
+accepted too, the total is their sum when missing; 0 when not given). In a
+stream it is read from whichever chunk carries it — usually a last chunk with
+empty `choices` (LiteLLM, OpenAI) or the finish chunk (Hermes); a later chunk
+with zero counts does not erase real ones.
 
 ## `n8n` backend
 

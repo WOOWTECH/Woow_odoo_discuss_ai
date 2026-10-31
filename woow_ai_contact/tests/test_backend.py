@@ -68,6 +68,44 @@ class TestStreaming(AiContactCase):
         self.assertEqual((log.status, log.prompt_tokens, log.completion_tokens, log.total_tokens),
                          ('ok', 12, 5, 17))
 
+    def test_stream_asks_for_usage(self):
+        # LiteLLM / OpenAI send the usage of a stream only when asked (acceptance 10-31: all 0)
+        chat, job, post = self.ask(sse_response([sse_event(delta('ok', 'stop')), 'data: [DONE]\n\n']))
+        body = json.loads(post.call_args.kwargs['data'])
+        self.assertIs(body['stream'], True)
+        self.assertEqual(body['stream_options'], {'include_usage': True})
+
+    def test_no_stream_options_without_stream(self):
+        self.contact.openai_stream = False
+        chat, job, post = self.ask(openai_ok('not streamed'))
+        self.assertNotIn('stream_options', json.loads(post.call_args.kwargs['data']))
+
+    def test_sse_usage_only_chunk_as_litellm_sends_it(self):
+        # LiteLLM 10-31: the finish chunk, then {"choices": [], "usage": {...}} (no "index"), then [DONE];
+        # content chunks carry "usage": null or zero counts
+        usage = {'completion_tokens': 9, 'prompt_tokens': 1698, 'total_tokens': 1707,
+                 'completion_tokens_details': {'reasoning_tokens': 0},
+                 'prompt_tokens_details': {'cached_tokens': 1408}}
+        zero = {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0}
+        body = (sse_event(delta('PINEAPPLE', usage=None))
+                + sse_event(delta('-77', usage=zero))
+                + sse_event(delta(None, 'stop'))
+                + sse_event({'id': 'x', 'object': 'chat.completion.chunk', 'choices': [], 'usage': usage})
+                + sse_event({'choices': [], 'usage': zero})  # a trailing empty usage does not erase it
+                + 'data: [DONE]\n\n')
+        chat, job, _post = self.ask(sse_response([body]))
+        self.assertEqual(job.state, 'done', job.error)
+        self.assertIn('PINEAPPLE-77', job.reply_message_id.body)
+        log = call_log(self.env, job)
+        self.assertEqual((log.prompt_tokens, log.completion_tokens, log.total_tokens), (1698, 9, 1707))
+
+    def test_usage_tokens_variants(self):
+        tokens = ai_contact_backend.usage_tokens
+        self.assertEqual(tokens({'input_tokens': 4, 'output_tokens': 6}), (4, 6, 10))
+        self.assertEqual(tokens({'prompt_tokens': 4, 'completion_tokens': 6}), (4, 6, 10))
+        self.assertEqual(tokens({'prompt_tokens': -1, 'completion_tokens': True, 'total_tokens': '9'}), (0, 0, 0))
+        self.assertEqual(tokens(None), (0, 0, 0))
+
     def test_sse_idle_timeout_not_retried(self):
         idle = requests.ConnectionError(ReadTimeoutError(None, None, 'Read timed out.'))
         chat, job, post = self.ask(sse_response([': keepalive\n\n', sse_event(delta('par'))], error=idle))
