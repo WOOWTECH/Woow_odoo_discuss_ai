@@ -132,6 +132,50 @@ class TestAiContact(AiContactCase):
         export = self.contact.export_data(['api_key'])['datas']
         self.assertFalse(export[0][0])
 
+    def test_api_key_removed_when_the_server_changes(self):
+        contact = self.contact
+        # same server, other path: kept
+        contact.endpoint_url = 'https://llm.example.com/v2'
+        self.assertEqual(contact._get_api_key(), TEST_KEY)
+        contact.endpoint_url = 'HTTPS://LLM.example.com:443/v1'
+        self.assertEqual(contact._get_api_key(), TEST_KEY)
+        # other host without a new key: removed before anything is sent there
+        contact.endpoint_url = 'https://openrouter.example.org/api/v1'
+        self.assertFalse(contact.api_key_set)
+        self.assertEqual(contact._get_api_key(), '')
+        with patch(BACKEND_GET) as get:
+            result = contact.action_test_connection()
+        get.assert_not_called()
+        self.assertEqual(result['params']['type'], 'danger')
+        # other host with a new key in the same write: the new key is kept
+        contact.write({'endpoint_url': 'https://llm2.example.com/v1', 'api_key': 'second-placeholder'})
+        self.assertEqual(contact._get_api_key(), 'second-placeholder')
+        # other port / scheme counts as another server
+        contact.endpoint_url = 'https://llm2.example.com:8443/v1'
+        self.assertFalse(contact.api_key_set)
+        # a key set while the URL was empty survives filling the URL in (migration)
+        contact.write({'endpoint_url': False, 'api_key': 'third-placeholder'})
+        contact.endpoint_url = 'https://llm.example.com/v1'
+        self.assertEqual(contact._get_api_key(), 'third-placeholder')
+        # n8n signing secret -> openai: never becomes a Bearer token
+        self.n8n.backend_type = 'openai'
+        self.assertFalse(self.n8n.api_key_set)
+        self.n8n.write({'backend_type': 'n8n', 'api_key': 'n8n-placeholder'})
+        self.n8n.write({'name': 'Renamed', 'backend_type': 'n8n'})  # unchanged type: kept
+        self.assertEqual(self.n8n._get_api_key(), 'n8n-placeholder')
+
+    def test_uninstall_hook_archives_bot_partners(self):
+        from odoo.addons.woow_ai_contact.hooks import uninstall_hook
+        chat = self.chat(self.portal)
+        self.assertTrue(self.contact.partner_id.active)
+        uninstall_hook(self.env)
+        self.assertFalse(self.contact.partner_id.active)
+        self.assertFalse(self.n8n.partner_id.active)
+        self.assertTrue(self.contact.partner_id.exists(), 'kept: it authors the old AI messages')
+        member = chat.channel_member_ids.filtered(lambda m: m.partner_id == self.portal.partner_id)
+        self.assertTrue(member.unpin_dt)
+        self.assertFalse(chat.allow_public_upload)
+
     def test_non_admin_cannot_read_connection(self):
         contact = self.contact.with_user(self.internal)
         self.assertEqual(contact.name, 'Product Advisor')

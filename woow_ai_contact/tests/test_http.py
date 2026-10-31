@@ -124,6 +124,24 @@ class TestAiContactHttp(HttpCase):
         self.contact.active = False
         self.assertEqual(self.push({'to': {'user_id': self.portal.id}, 'text': 'x'}, key=key).status_code, 401)
 
+    def test_push_email_is_an_exact_match(self):
+        # '_' and '%' in the address must not act as SQL wildcards
+        from odoo.addons.woow_ai_contact.controllers.main import WoowAiContactController
+        recipient = WoowAiContactController._push_recipient
+        near = new_test_user(self.env, 'aih_near', groups='base.group_user', email='johnXdoe@example.com')
+        self.assertEqual(recipient(self.env, {'email': 'john_doe@example.com'})[1], 'user_not_found')
+        self.assertEqual(recipient(self.env, {'email': '%@example.com'})[1], 'user_not_found')
+        self.assertEqual(recipient(self.env, {'email': 'john%doe@example.com'})[1], 'user_not_found')
+        self.assertEqual(recipient(self.env, {'email': 'JOHNXDOE@example.com'}), (near, None))  # case-insensitive
+        exact = new_test_user(self.env, 'aih_exact', groups='base.group_user', email='john_doe@example.com')
+        self.assertEqual(recipient(self.env, {'email': 'John_Doe@example.com'}), (exact, None))
+        key = self.contact.action_generate_push_key()['context']['default_push_key']
+        response = self.push({'to': {'email': 'john_doe@example.com'}, 'text': 'only for John'}, key=key)
+        self.assertEqual(response.status_code, 200, response.text)
+        chat = self.env['discuss.channel'].browse(response.json()['channel_id'])
+        self.assertIn(exact.partner_id, chat.channel_member_ids.partner_id)
+        self.assertNotIn(near.partner_id, chat.channel_member_ids.partner_id)
+
     # --- portal entry ---
 
     def test_portal_open_and_post(self):

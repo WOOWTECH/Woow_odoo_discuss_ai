@@ -16,7 +16,7 @@ from odoo.addons.woow_ai_contact.tools import media
 
 from .test_media import ooxml
 from .common import (BACKEND_POST, BACKEND_SLEEP, MEDIA_GET, TEST_KEY, TINY_PDF, TINY_PNG, AiContactCase,
-                     http_response, openai_ok)
+                     http_response, openai_ok, refused)
 
 
 def run(job):
@@ -227,7 +227,7 @@ class TestOpenAiJob(AiContactCase):
         chat = self.chat(self.internal)
         self.post(chat, self.internal, 'x')
         job = self.jobs(chat)
-        with patch(BACKEND_POST, side_effect=[requests.ConnectionError('down'), openai_ok('ok now')]) as post, \
+        with patch(BACKEND_POST, side_effect=[refused(), openai_ok('ok now')]) as post, \
                 patch(BACKEND_SLEEP) as sleep:
             run(job)
         self.assertEqual(post.call_count, 2)

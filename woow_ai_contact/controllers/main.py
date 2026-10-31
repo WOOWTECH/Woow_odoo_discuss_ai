@@ -7,6 +7,7 @@ from werkzeug.exceptions import NotFound
 
 from odoo import http, SUPERUSER_ID
 from odoo.http import request
+from odoo.tools.sql import escape_psql
 
 from odoo.addons.mail.tools.discuss import Store
 
@@ -151,7 +152,8 @@ class WoowAiContactController(http.Controller):
         else:
             if not isinstance(value, str) or '@' not in value:
                 return Users, 'invalid_recipient'
-            users = Users.search([('email', '=ilike', value.strip())], limit=2)
+            # exact, case-insensitive: '_' and '%' of the address are not wildcards
+            users = Users.search([('email', '=ilike', escape_psql(value.strip()))], limit=2)
             if len(users) > 1:
                 return Users, 'ambiguous_recipient'
         users = users.filtered(lambda u: u.active and not u._is_public())

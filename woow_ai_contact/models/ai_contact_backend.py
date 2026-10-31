@@ -11,11 +11,13 @@ import hmac
 import json
 import logging
 import re
+import socket
+import threading
 import time
 from datetime import datetime, timezone
 
 import requests
-from urllib3.exceptions import ReadTimeoutError
+from urllib3.exceptions import MaxRetryError, NewConnectionError, ReadTimeoutError
 
 from odoo import api, models
 
@@ -140,6 +142,70 @@ def _is_read_timeout(error):
     if isinstance(error, requests.ReadTimeout):
         return True
     return any(isinstance(arg, ReadTimeoutError) for arg in getattr(error, 'args', ()))
+
+
+def _request_not_sent(error):
+    """True when a requests.ConnectionError happened before the request was sent.
+
+    Only a connect timeout or a connection that could not be opened (refused,
+    unknown host: urllib3 NewConnectionError, NameResolutionError is a
+    subclass) qualify. requests raises ConnectionError too when the backend
+    received the whole request and then reset or closed the connection
+    (ProtocolError "Connection aborted", RemoteDisconnected): the backend may
+    be running tools then, so that is never retried (decision 26). TLS and
+    proxy errors are not retried either."""
+    if isinstance(error, requests.ConnectTimeout):
+        return True
+    if isinstance(error, (requests.exceptions.SSLError, requests.exceptions.ProxyError)):
+        return False
+    reason = error.args[0] if getattr(error, 'args', None) else None
+    if isinstance(reason, MaxRetryError):
+        reason = reason.reason
+    return isinstance(reason, NewConnectionError)
+
+
+class _StreamWatchdog:
+    """Cuts a streamed response at the total deadline.
+
+    The reading thread may be blocked inside one read for a long time (see
+    _sse_lines); a timer shuts the socket down at the deadline, which makes
+    that read return, and ``fired`` tells the reader it was a timeout."""
+
+    def __init__(self, response, deadline):
+        self.response = response
+        self.deadline = deadline
+        self.fired = False
+        self._timer = None
+
+    def __enter__(self):
+        self._timer = threading.Timer(max(0.0, self.deadline - time.time()), self._fire)
+        self._timer.daemon = True
+        self._timer.start()
+        return self
+
+    def __exit__(self, *exc):
+        self._timer.cancel()
+        return False
+
+    def _socket(self):
+        raw = getattr(self.response, 'raw', None)
+        conn = getattr(raw, '_connection', None) or getattr(raw, 'connection', None)
+        sock = getattr(conn, 'sock', None)
+        if sock is None:
+            fp = getattr(getattr(raw, '_fp', None), 'fp', None)
+            sock = getattr(getattr(fp, 'raw', None), '_sock', None)
+        return sock if isinstance(sock, socket.socket) else None
+
+    def _fire(self):
+        self.fired = True
+        try:
+            sock = self._socket()
+            if sock is not None:
+                sock.shutdown(socket.SHUT_RDWR)  # wakes a blocked recv()
+            else:
+                self.response.close()
+        except Exception:  # noqa: BLE001 - best effort; the reader still sees `fired`
+            _logger.debug("could not cut a streamed answer at its deadline", exc_info=True)
 
 
 def _int_or_zero(value):
@@ -377,11 +443,16 @@ class WoowAiContactBackend(models.Model):
         return strip_think(content or '')
 
     @staticmethod
-    def _sse_lines(response, deadline):
-        """Lines (str) of a streamed response; checks the total deadline."""
+    def _sse_lines(response, deadline, watchdog=None):
+        """Lines (str) of a streamed response; checks the total deadline.
+
+        A read can block far longer than one chunk suggests (without chunked
+        encoding urllib3 waits for a full chunk or EOF, and small keepalives
+        keep resetting the socket timeout), so ``watchdog`` (_StreamWatchdog)
+        also cuts the connection at the deadline."""
         buffer = b''
         for chunk in response.iter_content(chunk_size=SSE_CHUNK_SIZE):
-            if time.time() > deadline:
+            if time.time() > deadline or (watchdog and watchdog.fired):
                 raise BackendError('timeout', 'timeout: the streamed answer took too long')
             if not chunk:
                 continue
@@ -437,21 +508,29 @@ class WoowAiContactBackend(models.Model):
                 if choice.get('finish_reason'):
                     state['finish_reason'] = choice['finish_reason']
 
-        for line in cls._sse_lines(response, deadline):
-            if not line:
-                dispatch()
-                if state['done']:
-                    break
-                continue
-            if line.startswith(':'):
-                continue  # comment / keepalive
-            field, _sep, value = line.partition(':')
-            if value.startswith(' '):
-                value = value[1:]
-            if field == 'data':
-                event['data'].append(value)
-            elif field == 'event':
-                event['type'] = value
+        with _StreamWatchdog(response, deadline) as watchdog:
+            try:
+                for line in cls._sse_lines(response, deadline, watchdog):
+                    if not line:
+                        dispatch()
+                        if state['done']:
+                            break
+                        continue
+                    if line.startswith(':'):
+                        continue  # comment / keepalive
+                    field, _sep, value = line.partition(':')
+                    if value.startswith(' '):
+                        value = value[1:]
+                    if field == 'data':
+                        event['data'].append(value)
+                    elif field == 'event':
+                        event['type'] = value
+            except (requests.RequestException, OSError):
+                if watchdog.fired and not state['done']:
+                    raise BackendError('timeout', 'timeout: the streamed answer took too long')
+                raise
+            if watchdog.fired and not state['done']:
+                raise BackendError('timeout', 'timeout: the streamed answer took too long')
         if not state['done']:
             dispatch()
         if not state['done'] and not state['finish_reason']:
@@ -495,10 +574,16 @@ class WoowAiContactBackend(models.Model):
         """POST with explicit timeouts and bounded retries.
 
         Retried (at most ``max_retries`` times, after RETRY_WAITS seconds and
-        only while the total ``deadline`` allows it): a failed connection (the
-        request was not sent) and HTTP 429 / 503 (the backend refused before
-        working). Never retried: read timeouts, 502 / 504 / 524 and every other
-        answer, because the backend may already be running tools. Reads
+        only while the total ``deadline`` allows it): a connection that could
+        not be opened (refused, unknown host, connect timeout: the request was
+        not sent, see _request_not_sent) and HTTP 429 / 503 (the backend
+        refused before working). Never retried: a connection reset or closed
+        after the request was sent, read timeouts, 502 / 504 / 524 and every
+        other answer, because the backend may already be running tools.
+
+        Redirects are never followed: a 3xx is returned like any other answer
+        (an http_error for the caller), so the conversation is never re-sent
+        to a host or a scheme that endpoint_url_allowed did not check. Reads
         nothing from the database (no transaction is open here).
         """
         timeout = (CONNECT_TIMEOUT, read_timeout)
@@ -506,10 +591,10 @@ class WoowAiContactBackend(models.Model):
         while True:
             retry_reason = None
             try:
-                response = requests.post(url, data=body, headers=headers, timeout=timeout, stream=stream)
+                response = requests.post(url, data=body, headers=headers, timeout=timeout, stream=stream,
+                                         allow_redirects=False)
             except requests.ConnectionError as e:
-                # ConnectTimeout is both; a read timeout is never retried
-                if isinstance(e, requests.ReadTimeout):
+                if not _request_not_sent(e):
                     raise
                 retry_reason, error = type(e).__name__, e
             else:

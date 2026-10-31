@@ -24,7 +24,7 @@ Odoo 18。讓內部用戶與 portal 用戶在 Discuss 裡和「AI 聯絡人」�
 | `allowed_group_ids` | 可使用的群組；預設 `base.group_user`＋`base.group_portal`。**空集合＝不能私訊**（側欄、portal、推送都不列；只給 Live Chat 等橋接用） | 系統管理員 |
 | `backend_type` | `openai`（Hermes／LiteLLM）或 `n8n` | 系統管理員 |
 | `endpoint_url` | openai：base URL（…/v1）；n8n：webhook 完整網址 | 系統管理員 |
-| `api_key` | 只寫不讀：非儲存 compute／inverse 欄位，實際值存在只用 SQL 存取的欄 `woow_ai_contact.api_key_secret`（不是 ORM 欄位，任何 read／export／表單都拿不到）；另有 `api_key_set` 顯示是否已設定。openai：Bearer 金鑰；**n8n：HMAC 簽章金鑰，表單標籤「簽章金鑰」，永遠不送出** | 系統管理員 |
+| `api_key` | 只寫不讀：非儲存 compute／inverse 欄位，實際值存在只用 SQL 存取的欄 `woow_ai_contact.api_key_secret`（不是 ORM 欄位，任何 read／export／表單都拿不到）；另有 `api_key_set` 顯示是否已設定。**端點換到另一台伺服器（scheme／主機／埠不同，或清空）或換後端類型、同一次寫入又沒給新金鑰 → 已存的金鑰自動移除**（不會把公司 LiteLLM 金鑰送到新主機，也不會把 n8n 簽章金鑰當 Bearer 送出；原本沒網址、之後才填的不算，給搬移用）；表單沒有金鑰時顯示提示。openai：Bearer 金鑰；**n8n：HMAC 簽章金鑰，表單標籤「簽章金鑰」，永遠不送出** | 系統管理員 |
 | `model` | openai 用；可空（Hermes 用自己的預設） | 系統管理員 |
 | `system_prompt` | 可空；空白＝完全交給後端角色 | 系統管理員 |
 | `max_history` | 預設 50，1–200（同 livechat） | 系統管理員 |
@@ -40,6 +40,7 @@ Odoo 18。讓內部用戶與 portal 用戶在 Discuss 裡和「AI 聯絡人」�
 ### `woow.ai.job`（回覆工作）
 沿用 `im_livechat_ai` 1.1.0 C 包的設計並一般化：
 - 使用者訊息與 job 在同一交易建立；commit 後（`cr.postcommit`）起 worker thread（非 daemon），debounce 1.5 秒。
+- prefork worker 達到記憶體／請求數上限要回收時會等這些 thread，但等待期間不再回報 master，master 在 `limit_time_real` 後 SIGKILL，回覆被切斷、復原 cron 會重跑（後端再被呼叫一次）。**`limit_time_real` 要大於 `timeout_seconds` 加下載時間**（不足時第一次處理該 AI 聯絡人就記 warning，`_warn_worker_limits`，餘裕 60 秒）。把長呼叫移出 HTTP worker、或「已呼叫過後端的 job 復原時不重呼叫」屬架構／定案層級，待負責人決定（與定案 8「重啟不掉單」取捨）。
 - 每個 `discuss.channel` 一把 PostgreSQL advisory lock；同頻道只處理最新一筆（較舊的 skipped），最新那筆帶完整歷史。
 - 復原 cron 每 2 分鐘接手 pending／running 卡住的 job；每筆最多 3 次；超過 30 分鐘放棄。
 - 呼叫後端前與張貼前都再檢查一次（是否有更新的 job、livechat 是否暫停）。
@@ -147,6 +148,7 @@ Authorization: Bearer <push key>      # 對應到某個 AI 聯絡人
 ```
 - 找或建該使用者與 AI 的私訊頻道，以機器人身分張貼（同上呈現規則）。
 - 金鑰以常數時間比對 sha256。不限速（負責人定案：不限用量）。
+- `email` 是精確、不分大小寫的比對（`=ilike` 前先跳脫 `\`、`%`、`_`，地址裡的底線不是萬用字元）。
 - 實作補充：`auth='none'` 的路由在 Odoo 18 預設用唯讀 cursor，所以明確設 `readonly=False`；資料庫必須能由網域判斷（單一資料庫或 dbfilter，PaaS 租戶即是）。收件人必須是有效使用者（只有 partner、沒有 user → 404）；`email` 對到多個使用者 → 400 `ambiguous_recipient`。推送也寫一筆呼叫紀錄（`backend_type = push`，不存內容）。推送不會觸發 AI 回覆。
 
 ## 入口
@@ -183,6 +185,7 @@ Authorization: Bearer <push key>      # 對應到某個 AI 聯絡人
   3. **完成**：全部頻道切換並觀察後 `finalized`；1.1.0 共用機器人與標籤的 xmlid 轉給橋接（noupdate），刪除 `im_livechat_ai.*` 系統參數（金鑰優先）。
   4. **解除安裝** `im_livechat_ai`（舊呼叫紀錄不搬，需要的話先匯出）。橋接自己解除安裝時，`uninstall_hook` 把舊機器人的 xmlid 移到 `__export__`。
   5. 所有租戶都解除安裝 1.1.0 後，平台映像才拿掉 `im_livechat_ai`。
+- 解除安裝核心 `woow_ai_contact`：`uninstall_hook` 封存所有 AI 聯絡人的機器人 partner（保留，舊訊息的作者）、把 AI 私訊對其他成員取消釘選並關掉 `allow_public_upload`，免得還能私訊一個不會回答的聯絡人。
 - 共存保護：頻道的 1.1.0 `ai_enabled` 為 True（SQL 讀）時橋接不回覆；兩邊互相擋住「另一邊開著時打開」。
 
 ## 測試計畫（沙盒，不碰正式站）
@@ -197,7 +200,9 @@ Authorization: Bearer <push key>      # 對應到某個 AI 聯絡人
 - **Bridge 掛勾**（給 `woow_ai_contact_livechat`）：`discuss.channel._woow_ai_channel_contact()`（這個頻道由哪個 AI 聯絡人回答；核心＝含機器人成員的 chat）、`_woow_ai_check_author()`（ok／denied／ignore）、`_woow_ai_message_kind()`（reply／handoff／None）、`_woow_ai_is_paused()`、`_woow_ai_author_role()`（歷史角色與前綴，例如「[真人客服 名字]」）、`_woow_ai_requester()`（身分要送誰）、`_woow_ai_identity(contact)`（身分 dict，預設 `contact._identity(requester)`）、`_woow_ai_system_prompt(contact, history)`（預設 `contact.system_prompt`）、`_woow_ai_link_hosts(contact)`（預設 None）、`_woow_ai_channel_info()`（n8n 的 `channel` 物件）。`_woow_ai_handle_new_message(message)` 的契約：回傳建立的 `woow.ai.job` 或 False；**先算 kind 再檢查暫停**（kind 鉤子看得到每一則允許的訊息，暫停中就不建 job；橋接要在 `super()` 回傳 handoff job 之後才暫停）。`woow.ai.job` 的 `_process_handoff()`、`_notify_failure(reason, visitor_told=True)` 也是掛勾（太舊放棄傳 `visitor_told=False`，`_give_up` 傳 True）；核心版 handoff 直接 skipped、失敗只記 log（1 對 1 私訊裡使用者已看到錯誤訊息，沒有客服要通知）。`_skip_reply` 與張貼前都檢查 `channel._woow_ai_channel_contact() == job.contact_id`，不同就 `skipped`「AI turned off or contact changed」。
 - **佇列**：與 1.1.0 相同（postcommit 非 daemon thread、debounce 1.5 秒、每頻道 advisory lock、READ COMMITTED cursor、張貼前鎖頻道列再檢查一次、復原 cron 每 2 分鐘、每筆最多 3 次、30 分鐘放棄）。檔案下載在鎖頻道列**之前**做（不寫資料庫），鎖住後才建附件並張貼，避免長時間擋住使用者發訊。HTTP 呼叫期間沒有開著的交易（逾時秒數等設定在 commit 前先讀好）。
 - **輸入中**：開始呼叫時 `True`、張貼前 `False`；另起一個 daemon thread 用自己的 cursor 每 20 秒重送 `True`。沙盒實測 45 秒呼叫：True 於 0／20／40 秒、結束送 False。
-- **重試**：`max_retries`（預設 1）次，只對連線失敗（請求沒送出）、HTTP 429、503，3 秒、10 秒後，不超過總時限；讀取逾時與其他 HTTP 錯誤不重試（n8n 不保證冪等、Hermes 工具可能已執行）。
+- **轉址**：後端呼叫（`_http_post`）與測試連線都不跟隨轉址（`allow_redirects=False`），3xx 視為 `http_error`；否則 307／308 會把整段對話、身分與簽名網址用純 http 重送到別的主機，301／302 會改成 GET 打任意網址。
+- **串流總時限**：沒有 chunked 編碼時 urllib3 一次讀 1024 位元組會等到湊滿或 EOF，小 keepalive 一直重設 socket 逾時，chunk 邊界的時限檢查就失效；`_StreamWatchdog` 在總時限到時 `shutdown` socket，讀取立刻返回並記 timeout。
+- **重試**：`max_retries`（預設 1）次，只對連線失敗（請求沒送出：連不上、找不到主機、連線逾時，即 urllib3 `NewConnectionError`／`ConnectTimeout`；收完請求後斷線的 `ProtocolError`／`RemoteDisconnected` 不算）、HTTP 429、503，3 秒、10 秒後，不超過總時限；讀取逾時與其他 HTTP 錯誤不重試（n8n 不保證冪等、Hermes 工具可能已執行）。
 - **n8n 回應**寬鬆接受 `{"reply": "文字"}` 與 n8n 的 item 陣列 `[{...}]`；`replies` 最多 10 則。
 - **openai `metadata`**：攤平成字串鍵、字串值（`odoo_user_id`、`odoo_email`…，最多 16 鍵、每值 512 字），符合 OpenAI 官方的格式要求；LiteLLM／Hermes 不會送給模型。OpenAI 官方 API 在沒有 `store` 時仍可能拒絕 `metadata`，直接接 OpenAI 官方時要注意（目前沒有開關）。
 - **沒有做的**：Hermes header 會話模式（定案 23，維持定案 5 每次送最近 N 則）；`livechat_allowed` 開關（定案 25）；`openai_extra_params`（temperature 等參數交給後端／LiteLLM 設定）。

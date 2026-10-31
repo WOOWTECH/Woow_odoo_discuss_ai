@@ -5,19 +5,20 @@ import base64
 import json
 import time
 from unittest.mock import patch
+from urllib.parse import urlsplit
 
 import requests
 from urllib3.exceptions import ReadTimeoutError
 
-from odoo.tests.common import tagged
+from odoo.tests.common import _super_send, tagged
 from odoo.tools import mute_logger
 
 from odoo.addons.woow_ai_contact.models import ai_contact_backend
 from odoo.addons.woow_ai_contact.models.ai_contact_backend import (BackendError, normalize_turns, redact,
                                                                    strip_think)
 
-from .common import (BACKEND_POST, BACKEND_SLEEP, TINY_PNG, AiContactCase, delta, http_response, openai_ok,
-                     sse_event, sse_response)
+from .common import (BACKEND_POST, BACKEND_SLEEP, TINY_PNG, AiContactCase, LocalServer, delta, free_port,
+                     http_response, openai_ok, refused, reset_after_send, slow_sse_handler, sse_event, sse_response)
 
 BACKEND = 'odoo.addons.woow_ai_contact.models.ai_contact_backend'
 PNG_B64 = base64.b64encode(TINY_PNG).decode()
@@ -98,6 +99,16 @@ class TestStreaming(AiContactCase):
         self.assertIn('plain json', job.reply_message_id.body)
         self.assertEqual(call_log(self.env, job).total_tokens, 5)
 
+    def test_redirect_never_followed(self):
+        # an https endpoint answering 307 to plain http: the conversation is not re-sent
+        redirect = http_response(307, headers={'Location': 'http://other.example.com/steal'})
+        chat, job, post = self.ask(redirect)
+        self.assertEqual(post.call_count, 1)
+        self.assertIs(post.call_args.kwargs['allow_redirects'], False)
+        self.assertEqual(job.state, 'failed')
+        log = call_log(self.env, job)
+        self.assertEqual((log.status, log.http_status), ('http_error', 307))
+
     def test_stream_off(self):
         self.contact.openai_stream = False
         chat, job, post = self.ask(openai_ok('not streamed'))
@@ -140,7 +151,7 @@ class TestRetries(AiContactCase):
         self.assertEqual(call_log(self.env, job).http_status, 503)
 
     def test_two_retries_backoff(self):
-        job, post, sleep = self.ask([requests.ConnectionError('down'), http_response(503), openai_ok('third')],
+        job, post, sleep = self.ask([refused(), http_response(503), openai_ok('third')],
                                     max_retries=2)
         self.assertEqual(post.call_count, 3)
         self.assertEqual([c.args[0] for c in sleep.call_args_list], [3, 10])
@@ -157,10 +168,22 @@ class TestRetries(AiContactCase):
         self.assertEqual(call_log(self.env, job).status, 'timeout')
 
     def test_no_retry(self):
-        job, post, sleep = self.ask([requests.ConnectionError('down'), openai_ok()], max_retries=0)
+        job, post, sleep = self.ask([refused(), openai_ok()], max_retries=0)
         self.assertEqual(post.call_count, 1)
         self.assertEqual(job.state, 'failed')
         self.assertIn('connection failed', job.error)
+
+    def test_connection_lost_after_send_not_retried(self):
+        # the backend received the request, then reset / closed the connection:
+        # it may be running tools, so the request is never sent again (decision 26)
+        for error in (reset_after_send(), requests.ConnectionError('Connection aborted.')):
+            job, post, sleep = self.ask([error, openai_ok('again')], max_retries=2)
+            self.assertEqual(post.call_count, 1)
+            sleep.assert_not_called()
+            self.assertEqual(job.state, 'failed')
+        # a connect timeout and an unknown host were never sent: retried
+        job, post, sleep = self.ask([requests.ConnectTimeout('slow connect'), openai_ok('ok')])
+        self.assertEqual((post.call_count, job.state), (2, 'done'))
 
     def test_retries_stay_within_timeout(self):
         # 5 s total: the 3 s wait fits, the 10 s one does not
@@ -421,3 +444,61 @@ class TestJobHooks(AiContactCase):
         post.assert_not_called()
         self.assertEqual(notify.call_args.kwargs.get('visitor_told'), False)
         self.assertFalse(old.reply_message_id)
+
+
+@tagged('woow_ai_contact')
+class TestWire(AiContactCase):
+    """Real sockets on 127.0.0.1: what requests does on the wire."""
+
+    @classmethod
+    def _request_handler(cls, s, r, **kw):
+        # Odoo's test guard compares the timeout with an int; ours is a (connect, read) tuple
+        if urlsplit(r.url).hostname == '127.0.0.1':
+            return _super_send(s, r, **kw)
+        return super()._request_handler(s, r, **kw)
+
+    def test_wire_reset_after_full_request_not_retried(self):
+        def close_after_reading(conn, _request):
+            pass  # the whole request was read: close without an answer
+
+        with LocalServer(close_after_reading) as server, patch(BACKEND_SLEEP) as sleep:
+            with self.assertRaises(requests.ConnectionError):
+                self.contact._http_post(server.url + '/v1/chat/completions', {'Content-Type': 'application/json'},
+                                        b'{"messages": []}', 5, max_retries=2)
+        self.assertEqual(len(server.requests), 1)
+        self.assertTrue(server.requests[0].endswith(b'{"messages": []}'))
+        sleep.assert_not_called()
+
+    def test_wire_refused_connection_retried(self):
+        url = 'http://127.0.0.1:%s/v1/chat/completions' % free_port()
+        with patch(BACKEND_SLEEP) as sleep:
+            with self.assertRaises(requests.ConnectionError):
+                self.contact._http_post(url, {}, b'{}', 5, max_retries=1)
+        self.assertEqual([c.args[0] for c in sleep.call_args_list], [3])
+
+    def test_sse_total_deadline_without_chunked_encoding(self):
+        # no chunked encoding: a 1024-byte read waits for 1024 bytes or EOF while
+        # small keepalives keep resetting the socket timeout; the deadline still cuts it
+        with LocalServer(slow_sse_handler(6)) as server:
+            response = self.contact._http_post(server.url + '/v1/chat/completions', {}, b'{}', 30, stream=True,
+                                               max_retries=0)
+            started = time.time()
+            with self.assertRaises(BackendError) as caught:
+                self.env['woow.ai.contact']._read_sse(response, started + 1)
+            elapsed = time.time() - started
+            response.close()
+        self.assertEqual(caught.exception.status, 'timeout')
+        self.assertLess(elapsed, 4, 'the deadline must not wait for the stream to end')
+
+    def test_wire_redirect_not_followed(self):
+        with LocalServer(lambda conn, _r: conn.sendall(b'stolen')) as target:
+            location = ('HTTP/1.1 307 Temporary Redirect\r\nLocation: %s/steal\r\nContent-Length: 0\r\n'
+                        'Connection: close\r\n\r\n' % target.url).encode()
+            with LocalServer(lambda conn, _r: conn.sendall(location)) as server:
+                response = self.contact._http_post(server.url + '/v1/chat/completions', {}, b'{"secret": 1}', 5,
+                                                   max_retries=0)
+                response.close()
+            time.sleep(0.3)
+            self.assertEqual(response.status_code, 307)
+            self.assertEqual(len(server.requests), 1)
+            self.assertEqual(target.requests, [], 'the redirect target never gets the conversation')

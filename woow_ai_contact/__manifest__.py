@@ -46,6 +46,7 @@ See README.md and docs/PROTOCOL.md in the repository.
             'woow_ai_contact/static/src/discuss_sidebar/**/*',
         ],
     },
+    'uninstall_hook': 'uninstall_hook',
     'installable': True,
     'auto_install': False,
     'application': False,

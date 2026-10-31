@@ -3,7 +3,13 @@
 
 import base64
 import json
+import socket
+import threading
+import time
 from unittest.mock import MagicMock
+
+import requests
+from urllib3.exceptions import MaxRetryError, NewConnectionError, ProtocolError
 
 from odoo.tests.common import TransactionCase, new_test_user
 
@@ -69,6 +75,110 @@ def delta(content, finish_reason=None, **extra):
     if finish_reason:
         choice['finish_reason'] = finish_reason
     return dict({'choices': [choice]}, **extra)
+
+
+def refused():
+    """requests' error for a connection that could not be opened (nothing sent)."""
+    return requests.ConnectionError(MaxRetryError(None, '/v1/chat/completions',
+                                                  NewConnectionError(None, 'Connection refused')))
+
+
+def reset_after_send():
+    """requests' error when the backend got the request and then reset the connection."""
+    return requests.ConnectionError(ProtocolError('Connection aborted.', ConnectionResetError(104, 'reset')))
+
+
+class LocalServer:
+    """Raw TCP server on 127.0.0.1 (the only host tests may reach) for wire
+    level cases a mock cannot show. ``handler(conn, request_bytes)`` answers
+    one connection; ``requests`` counts the requests received."""
+
+    def __init__(self, handler):
+        self.handler = handler
+        self.requests = []
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.sock.bind(('127.0.0.1', 0))
+        self.sock.listen(8)
+        self.sock.settimeout(0.2)
+        self.port = self.sock.getsockname()[1]
+        self.url = 'http://127.0.0.1:%s' % self.port
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._serve, daemon=True)
+
+    def __enter__(self):
+        self._thread.start()
+        return self
+
+    def __exit__(self, *exc):
+        self._stop.set()
+        self._thread.join(5)
+        self.sock.close()
+        return False
+
+    @staticmethod
+    def read_request(conn):
+        conn.settimeout(5)
+        data = b''
+        while b'\r\n\r\n' not in data:
+            chunk = conn.recv(65536)
+            if not chunk:
+                return data
+            data += chunk
+        head, _sep, body = data.partition(b'\r\n\r\n')
+        length = 0
+        for line in head.split(b'\r\n')[1:]:
+            name, _sep, value = line.partition(b':')
+            if name.strip().lower() == b'content-length':
+                length = int(value.strip())
+        while len(body) < length:
+            chunk = conn.recv(65536)
+            if not chunk:
+                break
+            body += chunk
+        return head + b'\r\n\r\n' + body
+
+    def _serve(self):
+        while not self._stop.is_set():
+            try:
+                conn, _addr = self.sock.accept()
+            except (socket.timeout, OSError):
+                continue
+            threading.Thread(target=self._handle, args=(conn,), daemon=True).start()
+
+    def _handle(self, conn):
+        try:
+            request = self.read_request(conn)
+            self.requests.append(request)
+            self.handler(conn, request)
+        except OSError:
+            pass
+        finally:
+            try:
+                conn.close()
+            except OSError:
+                pass
+
+
+def free_port():
+    """A local port nobody listens on (connection refused)."""
+    sock = socket.socket()
+    sock.bind(('127.0.0.1', 0))
+    port = sock.getsockname()[1]
+    sock.close()
+    return port
+
+
+def slow_sse_handler(seconds, interval=0.2):
+    """Non-chunked SSE answer (HTTP/1.0 style: no Content-Length, closed at the
+    end) that only sends small keepalives for `seconds`."""
+    def handler(conn, _request):
+        conn.sendall(b'HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n')
+        end = time.time() + seconds
+        while time.time() < end:
+            conn.sendall(b': keepalive\n\n')
+            time.sleep(interval)
+    return handler
 
 
 class AiContactCase(TransactionCase):

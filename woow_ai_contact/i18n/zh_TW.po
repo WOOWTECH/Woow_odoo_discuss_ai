@@ -580,10 +580,13 @@ msgstr ""
 msgid ""
 "OpenAI compatible: sent as \"Authorization: Bearer\". n8n: the signing "
 "secret of the X-Woow-Signature HMAC (never sent). Leave empty to keep the "
-"current key; the saved key is never shown again."
+"current key; the saved key is never shown again. Changing the endpoint host "
+"or the backend type removes the saved key, so it is never sent to another "
+"server: enter it again."
 msgstr ""
 "OpenAI 相容：以「Authorization: Bearer」送出。n8n：X-Woow-Signature HMAC "
-"的簽章金鑰（不會送出）。留空則保留目前的金鑰；儲存後不會再顯示。"
+"的簽章金鑰（不會送出）。留空則保留目前的金鑰；儲存後不會再顯示。變更端點主機或後端類型會移除"
+"已儲存的金鑰，避免送到另一台伺服器：請重新輸入。"
 
 #. module: woow_ai_contact
 #: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_contact__endpoint_url
@@ -755,10 +758,11 @@ msgstr "執行次數"
 msgid ""
 "Secret of the X-Woow-Signature HMAC (timestamp window 300 seconds). It is "
 "never sent to n8n: verify the signature in the workflow. Leave empty to keep"
-" the current secret."
+" the current secret. Changing the endpoint host or the backend type removes "
+"it."
 msgstr ""
 "X-Woow-Signature HMAC 的簽章金鑰（時間窗 300 秒）。不會送給 n8n：請在 workflow "
-"中驗證簽章。留空則保留目前的金鑰。"
+"中驗證簽章。留空則保留目前的金鑰。變更端點主機或後端類型會移除它。"
 
 #. module: woow_ai_contact
 #: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__sequence
@@ -966,3 +970,10 @@ msgstr "https://litellm.example.com/v1 或 https://n8n.example.com/webhook/…"
 #: model:ir.model.fields.selection,name:woow_ai_contact.selection__woow_ai_contact__backend_type__n8n
 msgid "n8n webhook"
 msgstr "n8n webhook"
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid ""
+"No API key is saved. Changing the endpoint host or the backend type removes "
+"the saved key, so it is never sent to another server: enter the key again."
+msgstr "尚未儲存 API 金鑰。變更端點主機或後端類型會移除已儲存的金鑰，避免送到另一台伺服器：請重新輸入金鑰。"

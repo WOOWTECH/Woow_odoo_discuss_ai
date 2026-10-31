@@ -578,7 +578,9 @@ msgstr ""
 msgid ""
 "OpenAI compatible: sent as \"Authorization: Bearer\". n8n: the signing "
 "secret of the X-Woow-Signature HMAC (never sent). Leave empty to keep the "
-"current key; the saved key is never shown again."
+"current key; the saved key is never shown again. Changing the endpoint host "
+"or the backend type removes the saved key, so it is never sent to another "
+"server: enter it again."
 msgstr ""
 
 #. module: woow_ai_contact
@@ -745,7 +747,8 @@ msgstr ""
 msgid ""
 "Secret of the X-Woow-Signature HMAC (timestamp window 300 seconds). It is "
 "never sent to n8n: verify the signature in the workflow. Leave empty to keep"
-" the current secret."
+" the current secret. Changing the endpoint host or the backend type removes "
+"it."
 msgstr ""
 
 #. module: woow_ai_contact
@@ -948,4 +951,11 @@ msgstr ""
 #: model:ir.model.fields.selection,name:woow_ai_contact.selection__woow_ai_call_log__backend_type__n8n
 #: model:ir.model.fields.selection,name:woow_ai_contact.selection__woow_ai_contact__backend_type__n8n
 msgid "n8n webhook"
+msgstr ""
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid ""
+"No API key is saved. Changing the endpoint host or the backend type removes "
+"the saved key, so it is never sent to another server: enter the key again."
 msgstr ""

@@ -36,6 +36,20 @@ def hash_push_key(key):
     return hashlib.sha256((key or '').encode()).hexdigest()
 
 
+def endpoint_origin(url):
+    """(scheme, host, port) of an endpoint URL, None when empty; the server a key is sent to."""
+    url = (url or '').strip()
+    if not url:
+        return None
+    try:
+        parts = urlsplit(url)
+        port = parts.port
+    except ValueError:
+        return ('?', url)
+    scheme = (parts.scheme or '').lower()
+    return (scheme, (parts.hostname or '').lower(), port or {'https': 443, 'http': 80}.get(scheme))
+
+
 def endpoint_url_allowed(url):
     """https, or http to localhost / an in-cluster *.svc.cluster.local host."""
     try:
@@ -91,7 +105,8 @@ class WoowAiContact(models.Model):
         store=False, groups='base.group_system', copy=False,
         help='OpenAI compatible: sent as "Authorization: Bearer". n8n: the signing secret of the '
              'X-Woow-Signature HMAC (never sent). Leave empty to keep the current key; the saved key '
-             'is never shown again.',
+             'is never shown again. Changing the endpoint host or the backend type removes the saved '
+             'key, so it is never sent to another server: enter it again.',
     )
     api_key_set = fields.Boolean(string='API Key Configured', compute='_compute_api_key',
                                  groups='base.group_system')
@@ -271,8 +286,34 @@ class WoowAiContact(models.Model):
                 contact.sudo().partner_id = partner
         return contacts
 
+    def _key_target_changes(self, vals):
+        """True when `vals` sends this contact's saved key to another server
+        (other scheme / host / port, endpoint removed) or uses it in another
+        way (backend type changed: an n8n signing secret must never become a
+        Bearer token) without giving a new key."""
+        self.ensure_one()
+        contact = self.sudo()
+        if (vals.get('api_key') or '').strip():
+            return False
+        if 'backend_type' in vals and vals['backend_type'] != contact.backend_type:
+            return True
+        if 'endpoint_url' in vals:
+            old = endpoint_origin(contact.endpoint_url)
+            return bool(old) and endpoint_origin(vals['endpoint_url']) != old
+        return False
+
     def write(self, vals):
+        drop_key = self.browse()
+        if {'endpoint_url', 'backend_type'} & set(vals):
+            keys = self._get_api_keys()
+            drop_key = self.filtered(lambda c: keys.get(c.id) and c._key_target_changes(vals))
         res = super().write(vals)
+        for contact in drop_key:
+            contact._set_api_key(False)
+            _logger.warning("AI contact %s: saved API key removed because the endpoint host or the backend "
+                            "type changed (user %s)", contact.id, self.env.uid)
+        if drop_key:
+            self.invalidate_recordset(['api_key', 'api_key_set'])
         if {'name', 'image_1920'} & set(vals):
             for contact in self.sudo():
                 if contact.partner_id:

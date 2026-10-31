@@ -72,11 +72,17 @@ Every call carries:
   byte** arrives for 30 s (SSE comments such as `: keepalive` count), and when
   the whole answer takes longer than the AI contact's *Timeout* (default 300 s).
 - `openai` without streaming and `n8n`: the answer must arrive within *Timeout*.
-- *Retries* (0–2, default 1): only when the connection failed (the request was
-  not sent) or the backend answered **HTTP 429 or 503**, after 3 s and then 10 s,
-  and only while the total *Timeout* allows it. A read timeout, HTTP 502, 504,
-  524 or any other answer is **never** retried: the backend may already be
-  running tools (a retried Hermes call would run them twice).
+- *Retries* (0–2, default 1): only when the connection could not be opened
+  (refused, unknown host, connect timeout: the request was not sent) or the
+  backend answered **HTTP 429 or 503**, after 3 s and then 10 s, and only while
+  the total *Timeout* allows it. A connection reset or closed after the request
+  was sent, a read timeout, HTTP 502, 504, 524 or any other answer is **never**
+  retried: the backend may already be running tools (a retried Hermes call would
+  run them twice).
+- Redirects are **not followed**: a 3xx answer is an error (`http_error` in the
+  call log, the error message in the chat). Point the endpoint at the final URL.
+- The total *Timeout* is enforced even when a proxy sends a non-chunked stream
+  with tiny keepalives (the connection is cut at the deadline).
 - Any failure posts the AI contact's error message in the chat and is kept in
   the call log (status, HTTP code, duration; never the upstream body).
 
@@ -376,7 +382,7 @@ Content-Type: application/json
 
 `to` is exactly one of `{"user_id": 7}` (recommended: take it from the webhook
 payload's `user.user_id`), `{"partner_id": 15}` (the user's partner) or
-`{"email": "user@example.com"}` (must match exactly one user). The push key is
+`{"email": "user@example.com"}` (exact, case-insensitive; must match exactly one user). The push key is
 per AI contact: *Generate Push Key* on the AI contact form shows it once; only
 its SHA-256 is stored. The text follows the reply rendering rules above.
 

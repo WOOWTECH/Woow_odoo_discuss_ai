@@ -7,9 +7,13 @@ Flow:
        transaction as the message (state pending)
     -> after COMMIT (cr.postcommit) a worker thread starts, waits the
        debounce delay and runs the job with its own cursor (not a daemon
-       thread: a prefork worker that recycles itself finishes the reply
-       before it exits; the recovery cron is triggered too, for the case
-       the process dies)
+       thread: a prefork worker that recycles itself (memory or request
+       limit) waits for the reply before it exits; the recovery cron is
+       triggered too, for the case the process dies). While it waits, the
+       recycling worker no longer pings the master, which kills it after
+       limit_time_real: limit_time_real must be larger than timeout_seconds
+       plus the file downloads, or a long reply is cut and run again by the
+       recovery cron (a warning is logged, see _warn_worker_limits)
     -> the job runs under a per-channel PostgreSQL advisory lock, so only
        one job per discuss.channel is processed at a time, across all
        workers and the cron process
@@ -42,6 +46,7 @@ from psycopg2.extensions import ISOLATION_LEVEL_READ_COMMITTED
 
 from odoo import api, fields, models, SUPERUSER_ID
 from odoo.modules.registry import Registry
+from odoo.tools import config
 
 _logger = logging.getLogger(__name__)
 
@@ -59,6 +64,28 @@ CRON_TRIGGER_DELAY_SECONDS = STALE_PENDING_SECONDS + 5
 TYPING_REFRESH_SECONDS = 20
 
 LOCK_NAMESPACE = zlib.crc32(b'woow_ai_contact.job') & 0x7FFFFFFF
+
+
+# margin for downloads and posting on top of timeout_seconds
+WORKER_LIMIT_MARGIN_SECONDS = 60
+_worker_limit_warned = set()
+
+
+def _warn_worker_limits(contact_id, timeout_seconds):
+    """Log once per AI contact and process when a prefork worker that recycles
+    itself during a reply would be killed before the reply ends."""
+    limit = config.get('limit_time_real') or 0
+    if not config.get('workers') or limit <= 0 or contact_id in _worker_limit_warned:
+        return False
+    if limit >= (timeout_seconds or 0) + WORKER_LIMIT_MARGIN_SECONDS:
+        return False
+    _worker_limit_warned.add(contact_id)
+    _logger.warning(
+        "AI contact %s: timeout %s s is too close to limit_time_real %s s: a worker that recycles itself "
+        "during a reply is killed by the watchdog and the reply runs again. Raise limit_time_real above "
+        "%s s or lower the timeout.", contact_id, timeout_seconds, limit,
+        (timeout_seconds or 0) + WORKER_LIMIT_MARGIN_SECONDS)
+    return True
 
 
 def _job_cursor(db_name):
@@ -326,6 +353,7 @@ class WoowAiJob(models.Model):
             return
         self.write({'context_message_id': max(context.ids)})
 
+        _warn_worker_limits(contact.id, contact.timeout_seconds)
         self._set_typing(True)
         commit_step()
         refresher = None

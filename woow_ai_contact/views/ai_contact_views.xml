@@ -57,6 +57,9 @@
                     </group>
                     <notebook groups="base.group_system">
                         <page string="Backend" name="backend">
+                            <div class="alert alert-warning" role="alert" invisible="api_key_set or not id">
+                                No API key is saved. Changing the endpoint host or the backend type removes the saved key, so it is never sent to another server: enter the key again.
+                            </div>
                             <group>
                                 <group>
                                     <field name="backend_type" widget="radio"/>
@@ -66,7 +69,7 @@
                                            placeholder="Leave empty to keep the current key"/>
                                     <field name="api_key" string="Signing Secret" password="True"
                                            invisible="backend_type != 'n8n'"
-                                           help="Secret of the X-Woow-Signature HMAC (timestamp window 300 seconds). It is never sent to n8n: verify the signature in the workflow. Leave empty to keep the current secret."
+                                           help="Secret of the X-Woow-Signature HMAC (timestamp window 300 seconds). It is never sent to n8n: verify the signature in the workflow. Leave empty to keep the current secret. Changing the endpoint host or the backend type removes it."
                                            placeholder="Leave empty to keep the current secret"/>
                                     <field name="api_key_set"/>
                                     <field name="model" invisible="backend_type != 'openai'"
