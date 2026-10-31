@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="im_livechat_channel_view_form_woow_ai" model="ir.ui.view">
+        <field name="name">im_livechat.channel.form.woow_ai_contact</field>
+        <field name="model">im_livechat.channel</field>
+        <field name="inherit_id" ref="im_livechat.im_livechat_channel_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//notebook" position="inside">
+                <page string="AI Contact" name="woow_ai_contact" groups="im_livechat.im_livechat_group_manager">
+                    <group>
+                        <group>
+                            <field name="woow_ai_enabled"/>
+                            <field name="woow_ai_contact_id" required="woow_ai_enabled"
+                                   options="{'no_create': True, 'no_open': True}"/>
+                            <field name="woow_ai_pause_minutes"/>
+                        </group>
+                        <group>
+                            <div class="text-muted" colspan="2">
+                                The AI contact answers the visitors of this channel. An operator's message pauses it in
+                                that conversation; operators type <code>/ai on</code> to resume it at once or
+                                <code>/ai off</code> to pause it. The backend should only use public data tools here
+                                (anonymous visitors).
+                            </div>
+                        </group>
+                    </group>
+                    <group string="Human Handoff">
+                        <field name="woow_ai_handoff_keywords"/>
+                        <field name="woow_ai_handoff_message"/>
+                        <field name="woow_ai_paused_message"/>
+                    </group>
+                    <group string="Migration from im_livechat_ai" groups="base.group_system"
+                           invisible="woow_ai_migration_state == 'none' and not woow_ai_legacy_available">
+                        <field name="woow_ai_legacy_available" invisible="1"/>
+                        <field name="woow_ai_migration_state"/>
+                        <field name="woow_ai_legacy_enabled"/>
+                        <field name="woow_ai_legacy_bot_partner_id"/>
+                        <field name="woow_ai_migration_note"/>
+                        <div colspan="2" class="d-flex flex-wrap gap-2">
+                            <button name="action_woow_ai_legacy_switch_wizard" type="object" class="btn-primary"
+                                    string="Switch from im_livechat_ai…" invisible="woow_ai_migration_state != 'staged'"/>
+                            <button name="action_woow_ai_legacy_switch_back" type="object" class="btn-secondary"
+                                    string="Switch back to im_livechat_ai"
+                                    invisible="woow_ai_migration_state != 'switched' or not woow_ai_legacy_available"/>
+                            <button name="action_woow_ai_legacy_prepare" type="object" class="btn-secondary"
+                                    string="Prepare again" invisible="not woow_ai_legacy_available"/>
+                            <button name="action_woow_ai_legacy_finish" type="object" class="btn-secondary"
+                                    string="Finish migration (all channels)"
+                                    invisible="woow_ai_migration_state in ('staged', 'finalized') or (not woow_ai_legacy_available and woow_ai_migration_state == 'none')"
+                                    confirm="Every channel must be switched. The im_livechat_ai system parameters (API key included) are deleted. Continue?"/>
+                        </div>
+                    </group>
+                </page>
+            </xpath>
+        </field>
+    </record>
+</odoo>

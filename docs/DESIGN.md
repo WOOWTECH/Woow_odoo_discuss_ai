@@ -166,9 +166,13 @@ Authorization: Bearer <push key>      # 對應到某個 AI 聯絡人
 
 ## woow_ai_contact_livechat
 
+實作（18.0.1.0.0）與操作細節：**docs/LIVECHAT.md**。以下是設計摘要。
+
 - 欄位一律 `woow_ai_` 開頭（搬移期間 `im_livechat_ai` 1.1.0 同時安裝，它已有 `im_livechat.channel.ai_enabled`、`discuss.channel.ai_paused_until`，同名會共用資料欄而兩邊都回覆）：`im_livechat.channel.woow_ai_contact_id`、`woow_ai_enabled`、`woow_ai_pause_minutes`、`woow_ai_handoff_keywords`、`woow_ai_handoff_message`、搬移用的 `woow_ai_legacy_*`／`woow_ai_migration_state`；`discuss.channel.woow_ai_paused_until`。
 - Live Chat 管理員可選**任一** AI 聯絡人（定案 25：**不加** `livechat_allowed` 開關；只給 Live Chat 用的聯絡人 `allowed_group_ids` 為空，橋接要給 Live Chat 管理員一條只讀 record rule 才選得到）；網址金鑰仍只有系統管理員看得到。後端要依 `channel.type == 'livechat'`／`user.is_guest` 只開放公開資料工具。
 - 訪客訊息觸發 job；真人客服張貼 → 暫停 AI（預設 30 分鐘，可設）；訪客說「轉真人」等關鍵字 → handoff job 張貼固定訊息並通知客服（沿用 1.1.0 D 包）。
+- 修 L1 實測的坑：預設關鍵字改成片語（「找真人」「轉人工」…，不再用單字「客服」「人工」「agent」）；暫停中訪客發訊息且最近 5 分鐘沒有客服發言 → 每次暫停張貼一次 `woow_ai_paused_message` 並再通知客服；客服 `/ai on`／`/ai off`／`/ai`（Live Chat 對話的指令）或對話表單按鈕立即恢復／暫停，恢復時回答沒人回的訪客訊息；暫停分鐘數一律檢查；Boolean 補 FALSE；搬移除了版本還要求舊金鑰欄已刪除。
+- 身分語言只用已安裝的語言（guest 可能帶未安裝的語言碼，核心翻譯預設錯誤訊息時會丟 `Invalid language code`，工作卡在 running；沙盒實測發現）。
 - 角色：訪客→user、AI→assistant、真人客服→assistant 並加「[真人客服 名字]」前綴（沿用 1.1.0）。
 - 不提供 Odoo 端商品工具（負責人定案：工具全部交給後端）。上線前要在後端（Hermes／n8n）用 Odoo MCP 補上查價，並以 L1 實測的價格案例回歸。
 - 使用核心鉤子：`_woow_ai_channel_contact`、`_woow_ai_check_author`、`_woow_ai_message_kind`、`_woow_ai_is_paused`、`_woow_ai_author_role`、`_woow_ai_requester`、`_woow_ai_identity`（guest 沒有 partner：放 guest 名稱、語言、時區）、`_woow_ai_system_prompt`（有真人客服訊息時加「同事回覆不要推翻」）、`_woow_ai_link_hosts`（官網網域）、`_woow_ai_channel_info`；`woow.ai.job._process_handoff`、`_notify_failure(reason, visitor_told)`。關掉 AI 或換聯絡人後還在排隊的工作，核心 `_skip_reply` 已會跳過。
@@ -176,8 +180,10 @@ Authorization: Bearer <push key>      # 對應到某個 AI 聯絡人
 - 搬移（分段，可回復；細節依 L1 的 `L1-findings.md` 與 `staging/livechat/BRIDGE-SPEC.md` e 節）：
   1. **準備**（`post_init_hook`／「重新準備」按鈕）：只讀 `im_livechat_ai` 18.0.1.1.0 以後的資料（SQL 讀，舊版的外洩金鑰欄永不讀），以 1.1.0 的系統 LiteLLM 設定建立 openai 型 AI 聯絡人（每組不同的模型＋提示詞各一個），頻道記下 `woow_ai_legacy_*`，狀態 `staged`，**不切換**（安裝不等於切換，避免商品工具立刻消失）。
   2. **切換**（每個頻道，系統管理員按，一筆交易）：先確認後端已做完價格回歸；關 1.1.0 的 `ai_enabled`、開 `woow_ai_enabled`，搬仍未到期的暫停與 30 分鐘內未跑的工作，狀態 `switched`；可切回。
-  3. **完成**：全部頻道切換並觀察後 `finalized`。
-  4. **解除安裝** `im_livechat_ai`（舊呼叫紀錄不搬，需要的話先匯出）。
+  3. **完成**：全部頻道切換並觀察後 `finalized`；1.1.0 共用機器人與標籤的 xmlid 轉給橋接（noupdate），刪除 `im_livechat_ai.*` 系統參數（金鑰優先）。
+  4. **解除安裝** `im_livechat_ai`（舊呼叫紀錄不搬，需要的話先匯出）。橋接自己解除安裝時，`uninstall_hook` 把舊機器人的 xmlid 移到 `__export__`。
+  5. 所有租戶都解除安裝 1.1.0 後，平台映像才拿掉 `im_livechat_ai`。
+- 共存保護：頻道的 1.1.0 `ai_enabled` 為 True（SQL 讀）時橋接不回覆；兩邊互相擋住「另一邊開著時打開」。
 
 ## 測試計畫（沙盒，不碰正式站）
 

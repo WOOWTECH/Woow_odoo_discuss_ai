@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_woow_ai_contact_form_livechat" model="ir.ui.view">
+        <field name="name">woow.ai.contact.form.livechat</field>
+        <field name="model">woow.ai.contact</field>
+        <field name="inherit_id" ref="woow_ai_contact.view_woow_ai_contact_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//page[@name='access']" position="inside">
+                <group string="Live Chat">
+                    <div colspan="2" class="text-muted">
+                        Live Chat visitors are often anonymous: an AI contact used here should only reach public
+                        data (products, prices, opening hours). The backend receives channel type "livechat" and
+                        user.is_guest.
+                    </div>
+                    <field name="livechat_channel_ids" readonly="1" colspan="2" nolabel="1">
+                        <list>
+                            <field name="name"/>
+                            <field name="woow_ai_enabled"/>
+                        </list>
+                    </field>
+                </group>
+            </xpath>
+        </field>
+    </record>
+</odoo>

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_woow_ai_livechat_switch_wizard_form" model="ir.ui.view">
+        <field name="name">woow.ai.livechat.switch.wizard.form</field>
+        <field name="model">woow.ai.livechat.switch.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Switch from im_livechat_ai">
+                <div class="alert alert-warning" role="alert">
+                    im_livechat_ai stops answering this channel and the AI contact takes over (on if im_livechat_ai
+                    was on). Its product tools are gone: prices now come from the AI contact's backend only.
+                </div>
+                <group>
+                    <field name="livechat_channel_id"/>
+                    <field name="contact_id"/>
+                    <field name="legacy_enabled" string="AI was on in im_livechat_ai"/>
+                    <field name="migration_note"/>
+                    <field name="price_regression_confirmed"/>
+                </group>
+                <footer>
+                    <button name="action_switch" type="object" string="Switch" class="btn-primary"
+                            invisible="not price_regression_confirmed"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+</odoo>

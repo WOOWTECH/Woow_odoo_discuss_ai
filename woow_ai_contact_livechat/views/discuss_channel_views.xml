@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Live Chat session form (Live Chat > Sessions): AI pause and resume -->
+    <record id="discuss_channel_view_form_woow_ai" model="ir.ui.view">
+        <field name="name">discuss.channel.form.livechat.woow_ai_contact</field>
+        <field name="model">discuss.channel</field>
+        <field name="inherit_id" ref="im_livechat.discuss_channel_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//sheet" position="before">
+                <header>
+                    <field name="woow_ai_livechat_enabled" invisible="1"/>
+                    <button name="action_woow_ai_resume" type="object" string="Resume AI now" class="btn-primary"
+                            invisible="not woow_ai_livechat_enabled or not woow_ai_paused_until"/>
+                    <button name="action_woow_ai_pause" type="object" string="Pause AI"
+                            invisible="not woow_ai_livechat_enabled"/>
+                </header>
+            </xpath>
+            <xpath expr="//field[@name='create_date']" position="after">
+                <field name="woow_ai_paused_until" invisible="not woow_ai_livechat_enabled"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>

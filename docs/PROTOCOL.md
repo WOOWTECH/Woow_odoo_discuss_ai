@@ -227,7 +227,10 @@ readable by everyone who can open the workflow's executions.)
 the earlier context, unchanged (the welcome message and pushes included).
 Several quick messages in a row get **one** call, with all of them in the
 context. Live Chat channels (bridge module) send `"type": "livechat"` and a
-`livechat` object in `channel`.
+`livechat` object in `channel` (fields and the visitor identity rows: see
+docs/LIVECHAT.md). Live Chat visitors are often anonymous: when
+`channel.type` is `livechat` or `user.is_guest` is true, give the model public
+data tools only.
 
 The *Test Connection* button sends a signed `{"event": "ping", "contact": {…}}`;
 answer any HTTP 200 (for example `{"skip": true}`) to non-`message` events.

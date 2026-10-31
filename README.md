@@ -10,7 +10,7 @@ server) or to an n8n webhook.
 | Module | Status | What it does |
 |---|---|---|
 | `woow_ai_contact` | available | AI contacts, backend connections, durable reply queue, files both ways, push API, Discuss sidebar section, portal `/my/ai` |
-| `woow_ai_contact_livechat` | planned | Live Chat channels answered by an AI contact, human handoff (replaces `im_livechat_ai`) |
+| `woow_ai_contact_livechat` | available (auto-installed with Live Chat) | Live Chat channels answered by an AI contact: human handoff, pause, `/ai on` resume, staged migration from `im_livechat_ai` (see [docs/LIVECHAT.md](docs/LIVECHAT.md)) |
 
 ## Features
 

@@ -7,7 +7,7 @@ Odoo 18 模組：讓內部用戶與 portal 用戶在 Discuss 裡和「AI 聯絡�
 | 模組 | 狀態 | 內容 |
 |---|---|---|
 | `woow_ai_contact` | 可用 | AI 聯絡人、後端連線、回覆佇列、雙向檔案、推送 API、Discuss 側欄、portal `/my/ai` |
-| `woow_ai_contact_livechat` | 規劃中 | Live Chat 頻道交給 AI 聯絡人回答、轉真人（取代 `im_livechat_ai`） |
+| `woow_ai_contact_livechat` | 可用（有 Live Chat 時自動安裝） | Live Chat 頻道交給 AI 聯絡人回答：轉真人、暫停、`/ai on` 立即恢復、從 `im_livechat_ai` 分段搬移（見 [docs/LIVECHAT.md](docs/LIVECHAT.md)） |
 
 ## 安裝
 
