@@ -86,6 +86,14 @@
                                 <field name="system_prompt" nolabel="1" colspan="2"
                                        placeholder="Optional. Leave empty to let the backend decide the role."/>
                             </group>
+                            <group string="Reply Processing" name="job_runner">
+                                <field name="job_runner_warning" invisible="1"/>
+                                <div colspan="2" class="alert alert-warning mb-2" role="alert"
+                                     invisible="not job_runner_warning">
+                                    Replies are not processed by the cron runner on this server: see below.
+                                </div>
+                                <field name="job_runner_info" nolabel="1" colspan="2" readonly="1"/>
+                            </group>
                         </page>
                         <page string="Messages" name="messages">
                             <group>

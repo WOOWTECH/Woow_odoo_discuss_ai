@@ -4,19 +4,29 @@
 Flow:
   user message_post
     -> discuss.channel._notify_thread creates a woow.ai.job in the SAME
-       transaction as the message (state pending)
-    -> after COMMIT (cr.postcommit) a worker thread starts, waits the
-       debounce delay and runs the job with its own cursor (not a daemon
-       thread: a prefork worker that recycles itself (memory or request
-       limit) waits for the reply before it exits; the recovery cron is
-       triggered too, for the case the process dies). While it waits, the
-       recycling worker no longer pings the master, which kills it after
-       limit_time_real: limit_time_real must be larger than timeout_seconds
-       plus the file downloads, or a long reply is cut and run again by the
-       recovery cron (a warning is logged, see _warn_worker_limits)
+       transaction as the message (state pending, due after the debounce)
+    -> the HTTP request only triggers the cron "AI Contacts: Run AI Replies"
+       (ir.cron._trigger: a NOTIFY after commit wakes a cron worker at once);
+       no thread is started in the web process
+    -> the cron callback is a dispatcher (tools/dispatcher.py): it runs the
+       due jobs on a bounded pool of threads INSIDE the cron process (one
+       thread per conversation, ``woow_ai_contact.max_concurrency``, default
+       4, each with its own cursor), keeps fetching newly due jobs while
+       replies run (every DISPATCH_POLL_SECONDS, one query), stops starting
+       new ones when its time budget is used (derived from the cron time
+       limit minus the longest AI contact timeout and a margin), JOINS its
+       threads and triggers itself again when work is left. A cron worker
+       only recycles between passes, so no reply is ever cut by a recycling
+       web worker any more
+    -> fallback ("thread" mode, the former design): when no cron runner can
+       take the work (max_cron_threads = 0 and no dispatcher pass seen
+       recently, --stop-after-init, tests) or the cron time limit is too short
+       for the longest timeout, the job runs in a postcommit thread of the
+       process that created it (see _job_runner; the mode is logged once and
+       shown on the AI contact form)
     -> the job runs under a per-channel PostgreSQL advisory lock, so only
        one job per discuss.channel is processed at a time, across all
-       workers and the cron process
+       processes; a conversation whose lock is busy is left alone and retried
     -> before calling the backend and again before posting, a job that has a
        newer job in the same channel is marked skipped; the newest job
        answers with the full conversation as context. A job whose channel is
@@ -25,12 +35,13 @@ Flow:
        channel row locked
     -> while the backend answers, the bot member shows "typing" (refreshed
        every TYPING_REFRESH_SECONDS), switched off when the reply is posted
-    -> when the lock holder finishes it runs the newest pending job of the
-       channel (the jobs whose own thread found the lock busy)
-  A cron (every 2 minutes) hands jobs left pending/running after a crash or
-  restart to recovery threads (one per channel), at most MAX_JOB_RUNS runs
-  per job, older than JOB_MAX_AGE_MINUTES given up, and never answers a job
-  whose trigger message was already in the context of a finished reply.
+  The same cron (every minute) re-queues jobs left pending/running after a
+  crash or restart (a 'running' job whose channel lock is free has lost its
+  owner), at most MAX_JOB_RUNS runs per job, older than JOB_MAX_AGE_MINUTES
+  given up, and never answers a job whose trigger message was already in the
+  context of a finished reply. A job can postpone itself (``_defer``, e.g.
+  the Live Chat bridge while im_livechat_ai is still answering): the cron is
+  triggered at its retry time.
 
 Bridges (Live Chat) plug in through the discuss.channel ``_woow_ai_*`` hooks
 and by overriding ``_process_handoff`` / ``_notify_failure`` here.
@@ -48,6 +59,8 @@ from odoo import api, fields, models, SUPERUSER_ID
 from odoo.modules.registry import Registry
 from odoo.tools import config
 
+from ..tools.dispatcher import BUSY, Dispatcher
+
 _logger = logging.getLogger(__name__)
 
 DEBOUNCE_SECONDS = 1.5
@@ -62,30 +75,35 @@ MAX_JOB_ERROR_LENGTH = 300
 CHANNEL_ROW_LOCK_TIMEOUT = '15s'
 CRON_TRIGGER_DELAY_SECONDS = STALE_PENDING_SECONDS + 5
 TYPING_REFRESH_SECONDS = 20
+TYPING_JOIN_SECONDS = 10
+FAILED_RUN_RETRY_SECONDS = 60  # a run that crashed before finishing is retried after this
 
 LOCK_NAMESPACE = zlib.crc32(b'woow_ai_contact.job') & 0x7FFFFFFF
 
-
-# margin for downloads and posting on top of timeout_seconds
+DISPATCH_CRON_XMLID = 'woow_ai_contact.ir_cron_run_ai_jobs'
+RUNNER_PARAM = 'woow_ai_contact.job_runner'            # auto (default) | cron | thread
+CONCURRENCY_PARAM = 'woow_ai_contact.max_concurrency'  # default 4
+DEFAULT_CONCURRENCY = 4
+MAX_CONCURRENCY = 16
+DISPATCH_POLL_SECONDS = 2.0     # fetch interval while replies run
+DISPATCH_IDLE_WAIT_SECONDS = 20.0  # stay in the pass for a job due this soon (debounce, deferred job)
+DISPATCH_BUSY_RETRY_SECONDS = 5.0  # a conversation locked by another process is retried after this
+MAX_DISPATCH_SECONDS = 300      # longest claiming window of one pass (other crons get their turn)
+# margin for downloads, posting and the claim on top of timeout_seconds
 WORKER_LIMIT_MARGIN_SECONDS = 60
-_worker_limit_warned = set()
+# prefork: a WorkerCron pings the watchdog BEFORE its idle sleep (SLEEP_INTERVAL
+# + pid % 10 seconds, odoo/service/server.py), so up to that much of
+# limit_time_real_cron is already used when a pass starts
+try:
+    from odoo.service.server import SLEEP_INTERVAL as _ODOO_CRON_SLEEP
+except ImportError:  # pragma: no cover
+    _ODOO_CRON_SLEEP = 60
+PREFORK_PASS_RESERVE_SECONDS = _ODOO_CRON_SLEEP + 10
+RUNNER_CACHE_SECONDS = 60
+HEARTBEAT_MINUTES = 10  # a dispatcher pass this recent = a cron runner exists (in another process)
 
-
-def _warn_worker_limits(contact_id, timeout_seconds):
-    """Log once per AI contact and process when a prefork worker that recycles
-    itself during a reply would be killed before the reply ends."""
-    limit = config.get('limit_time_real') or 0
-    if not config.get('workers') or limit <= 0 or contact_id in _worker_limit_warned:
-        return False
-    if limit >= (timeout_seconds or 0) + WORKER_LIMIT_MARGIN_SECONDS:
-        return False
-    _worker_limit_warned.add(contact_id)
-    _logger.warning(
-        "AI contact %s: timeout %s s is too close to limit_time_real %s s: a worker that recycles itself "
-        "during a reply is killed by the watchdog and the reply runs again. Raise limit_time_real above "
-        "%s s or lower the timeout.", contact_id, timeout_seconds, limit,
-        (timeout_seconds or 0) + WORKER_LIMIT_MARGIN_SECONDS)
-    return True
+_runner_cache = {}   # db name -> (expires monotonic, info)
+_runner_logged = {}  # db name -> (mode, reason) last logged
 
 
 def _job_cursor(db_name):
@@ -97,8 +115,40 @@ def _job_cursor(db_name):
     return cr
 
 
+def _cron_limit(threaded=None):
+    """Real-time limit (seconds, 0 = none) Odoo applies to a cron pass, as in
+    odoo/service/server.py: prefork WorkerCron watchdog = limit_time_real_cron
+    (-1: limit_time_real, 0: none); threaded cron threads (process_limit) use
+    limit_time_real_cron when > 0, else limit_time_real."""
+    if threaded is None:
+        threaded = not config.get('workers')
+    real = config.get('limit_time_real') or 0
+    cron = config.get('limit_time_real_cron')
+    if cron is None:
+        cron = -1
+    if threaded:
+        limit = cron if cron and cron > 0 else real
+    else:
+        limit = real if cron == -1 else cron
+    return max(0, int(limit or 0))
+
+
+def _pool_free_connections():
+    """Connections still free in this process' pool (odoo.sql_db), or None."""
+    try:
+        from odoo import sql_db  # noqa: PLC0415
+        pool = sql_db._Pool
+        if pool is None:
+            return None
+        used = sum(1 for item in list(pool._connections) if item[1])
+        return pool._maxconn - used
+    except Exception:  # noqa: BLE001 - private API: only a cap
+        return None
+
+
 def _job_worker(db_name, job_id, wait=True):
-    """Run a job and then the channel's newest pending job, in this thread. Never raises."""
+    """Run a job and then the channel's newest pending job, in this thread
+    ("thread" mode and the recovery of that mode). Never raises."""
     threading.current_thread().dbname = db_name
     first = True
     try:
@@ -111,7 +161,7 @@ def _job_worker(db_name, job_id, wait=True):
                         env = api.Environment(cr, SUPERUSER_ID, {})
                         delay = env['woow.ai.job']._seconds_until_due(job_id)
                 if delay > 0:
-                    time.sleep(min(delay, DEBOUNCE_SECONDS))
+                    time.sleep(min(delay, DISPATCH_IDLE_WAIT_SECONDS))
             with _job_cursor(db_name) as cr:
                 env = api.Environment(cr, SUPERUSER_ID, {})
                 Job = env['woow.ai.job']
@@ -119,7 +169,9 @@ def _job_worker(db_name, job_id, wait=True):
                 if not ran:
                     return
                 next_id = Job._next_pending_job_id(channel_id)
-            if not next_id or next_id == job_id:
+                # a job that postponed itself (_defer) is still pending: wait for it
+                deferred = next_id == job_id and Job._seconds_until_due(job_id) > 0
+            if not next_id or (next_id == job_id and not deferred):
                 return
             job_id, first, wait = next_id, False, True
     except Exception:  # noqa: BLE001 - a background thread must never die loudly
@@ -129,6 +181,36 @@ def _job_worker(db_name, job_id, wait=True):
 def _recovery_worker(db_name, job_ids):
     for job_id in job_ids:
         _job_worker(db_name, job_id, wait=False)
+
+
+def _dispatch_fetch(db_name, grace, exclude, limit):
+    """Dispatcher ``fetch``: due conversations, on a short-lived cursor."""
+    with _job_cursor(db_name) as cr:
+        env = api.Environment(cr, SUPERUSER_ID, {})
+        return env['woow.ai.job']._dispatch_candidates(exclude=exclude, limit=limit, grace=grace)
+
+
+def _channel_worker(db_name, grace, channel_id):
+    """Dispatcher ``run_unit``: run the due jobs of one conversation (the
+    newest first: it supersedes the older ones), in this thread with its own
+    cursor. Returns BUSY when another process holds the conversation."""
+    threading.current_thread().dbname = db_name
+    previous = None
+    for _i in range(CHAIN_LIMIT):
+        with _job_cursor(db_name) as cr:
+            env = api.Environment(cr, SUPERUSER_ID, {})
+            Job = env['woow.ai.job']
+            job_id = Job._due_job_id(channel_id, grace)
+            if not job_id:
+                return None
+            if job_id == previous:
+                # still due right after its run (it crashed): leave it to the next pass
+                return BUSY
+            _channel, ran = Job.browse(job_id)._run_job(commit=True)
+            if not ran:
+                return BUSY
+            previous = job_id
+    return None
 
 
 class _TypingRefresher(threading.Thread):
@@ -199,11 +281,29 @@ class WoowAiJob(models.Model):
             'kind': kind,
             'run_after': fields.Datetime.now() + timedelta(seconds=DEBOUNCE_SECONDS),
         })
-        job._start_after_commit()
-        cron = self.env.ref('woow_ai_contact.ir_cron_recover_ai_jobs', raise_if_not_found=False)
-        if cron:
-            cron.sudo()._trigger(job.run_after + timedelta(seconds=CRON_TRIGGER_DELAY_SECONDS))
+        job._schedule_dispatch()
         return job
+
+    def _schedule_dispatch(self, at=None):
+        """Make sure these (pending) jobs get processed, after the commit.
+
+        "cron" mode: trigger the dispatcher cron (``at`` None = now: Odoo
+        sends a NOTIFY after the commit that wakes a cron worker at once; the
+        dispatcher itself waits for ``run_after``). "thread" mode: start a
+        thread in this process after the commit (former design) and trigger
+        the cron later as recovery.
+        """
+        cron = self.env.ref(DISPATCH_CRON_XMLID, raise_if_not_found=False)
+        if self._job_runner()['mode'] == 'cron':
+            if cron:
+                now = fields.Datetime.now()
+                cron.sudo()._trigger(at if at and at > now else None)
+            return
+        if not at:
+            self._start_after_commit()
+        if cron:
+            due = at or max(self.mapped('run_after') or [fields.Datetime.now()])
+            cron.sudo()._trigger(due + timedelta(seconds=CRON_TRIGGER_DELAY_SECONDS))
 
     def _start_after_commit(self):
         db_name = self.env.cr.dbname
@@ -219,6 +319,90 @@ class WoowAiJob(models.Model):
 
         start_ai_job_threads.woow_ai_job_ids = job_ids
         self.env.cr.postcommit.add(start_ai_job_threads)
+
+    def _defer(self, seconds, reason):
+        """Postpone this job (left pending, due in `seconds`): e.g. the Live
+        Chat bridge while im_livechat_ai is still answering. The dispatcher
+        stays in its pass for a short wait; the cron is triggered at the due
+        time as well. The caller commits (commit_step)."""
+        self.ensure_one()
+        due = fields.Datetime.now() + timedelta(seconds=seconds)
+        self.write({'state': 'pending', 'run_after': due, 'error': (reason or '')[:MAX_JOB_ERROR_LENGTH] or False})
+        self._schedule_dispatch(at=due)
+        return due
+
+    # --- Runner mode ---
+
+    @api.model
+    def _job_runner(self, refresh=False):
+        """Where replies run: {'mode': 'cron'|'thread', 'reason', 'forced',
+        'server', 'cron_limit', 'required', 'max_timeout', 'cron_runner'}.
+
+        auto (default, system parameter woow_ai_contact.job_runner): "cron"
+        when a cron runner exists (max_cron_threads > 0 in this server and
+        not --stop-after-init / tests, or a dispatcher pass in the last
+        HEARTBEAT_MINUTES: crons run in another process) and its time limit
+        fits the longest AI contact timeout; otherwise "thread". Cached per
+        database for RUNNER_CACHE_SECONDS; logged once per change."""
+        db_name = self.env.cr.dbname
+        cached = _runner_cache.get(db_name)
+        now = time.monotonic()
+        if cached and not refresh and cached[0] > now:
+            return cached[1]
+        info = self._compute_job_runner()
+        _runner_cache[db_name] = (now + RUNNER_CACHE_SECONDS, info)
+        if _runner_logged.get(db_name) != (info['mode'], info['reason']):
+            _runner_logged[db_name] = (info['mode'], info['reason'])
+            log = _logger.warning if info['reason'] in ('cron_limit_too_low', 'forced_cron_limit_too_low',
+                                                         'no_cron_runner') else _logger.info
+            log("AI contacts (%s): replies run in %s mode (%s; cron limit %s s, needed %s s, "
+                "longest timeout %s s)", db_name, info['mode'], info['reason'], info['cron_limit'] or 'none',
+                info['required'], info['max_timeout'])
+        return info
+
+    @api.model
+    def _runner_cache_clear(self):
+        _runner_cache.pop(self.env.cr.dbname, None)
+
+    @api.model
+    def _compute_job_runner(self):
+        from odoo.modules import module as odoo_module  # noqa: PLC0415
+        cr = self.env.cr
+        forced = (self.env['ir.config_parameter'].sudo().get_param(RUNNER_PARAM) or 'auto').strip().lower()
+        if forced not in ('cron', 'thread'):
+            forced = 'auto'
+        threaded = not config.get('workers')
+        limit = _cron_limit(threaded)
+        cr.execute("SELECT max(timeout_seconds) FROM woow_ai_contact WHERE active")
+        max_timeout = (cr.fetchone() or [None])[0] or 300
+        reserve = 0 if threaded else PREFORK_PASS_RESERVE_SECONDS
+        required = max_timeout + WORKER_LIMIT_MARGIN_SECONDS + reserve
+        local = (config.get('max_cron_threads') or 0) > 0 and not config.get('stop_after_init') \
+            and not getattr(odoo_module, 'current_test', False)
+        heartbeat = False
+        if not local:
+            cr.execute("""
+                SELECT 1 FROM ir_cron c JOIN ir_model_data d ON d.res_id = c.id AND d.model = 'ir.cron'
+                 WHERE d.module = 'woow_ai_contact' AND d.name = 'ir_cron_run_ai_jobs' AND c.active
+                   AND c.lastcall > (statement_timestamp() AT TIME ZONE 'UTC') - make_interval(mins => %s)""",
+                       (HEARTBEAT_MINUTES,))
+            heartbeat = bool(cr.fetchone())
+        runner = local or heartbeat
+        fits = not limit or limit >= required
+        info = {'forced': forced != 'auto', 'server': 'threaded' if threaded else 'prefork',
+                'cron_limit': limit, 'required': required, 'max_timeout': max_timeout,
+                'cron_runner': 'local' if local else ('other process' if heartbeat else 'none')}
+        if forced == 'thread':
+            info.update(mode='thread', reason='forced_thread')
+        elif forced == 'cron':
+            info.update(mode='cron', reason='forced_cron' if fits else 'forced_cron_limit_too_low')
+        elif not runner:
+            info.update(mode='thread', reason='no_cron_runner')
+        elif not fits:
+            info.update(mode='thread', reason='cron_limit_too_low')
+        else:
+            info.update(mode='cron', reason='cron_runner')
+        return info
 
     # --- Per-channel lock ---
 
@@ -303,7 +487,12 @@ class WoowAiJob(models.Model):
             self.env.invalidate_all()
             try:
                 if self.exists() and self.state in ('pending', 'running'):
-                    self.write({'error': ('%s: %s' % (type(e).__name__, e))[:MAX_JOB_ERROR_LENGTH]})
+                    vals = {'error': ('%s: %s' % (type(e).__name__, e))[:MAX_JOB_ERROR_LENGTH]}
+                    if self.state == 'pending':
+                        # not claimed yet: do not pick it again at once (a 'running'
+                        # one waits STALE_RUNNING_SECONDS anyway)
+                        vals['run_after'] = fields.Datetime.now() + timedelta(seconds=FAILED_RUN_RETRY_SECONDS)
+                    self.write(vals)
                     cr.commit()
             except Exception:  # noqa: BLE001
                 cr.rollback()
@@ -353,7 +542,6 @@ class WoowAiJob(models.Model):
             return
         self.write({'context_message_id': max(context.ids)})
 
-        _warn_worker_limits(contact.id, contact.timeout_seconds)
         self._set_typing(True)
         commit_step()
         refresher = None
@@ -369,6 +557,7 @@ class WoowAiJob(models.Model):
         finally:
             if refresher:
                 refresher.stop_event.set()
+                refresher.join(TYPING_JOIN_SECONDS)  # no thread outlives the job (cron pass joins)
         warnings = [w for p in prepared for w in p.get('warnings') or []]
         if warnings and result.get('call_log'):
             log = result['call_log']
@@ -517,6 +706,167 @@ class WoowAiJob(models.Model):
             older.write({'state': 'skipped', 'finished_at': fields.Datetime.now(),
                          'error': 'answered by a newer job'})
 
+    # --- Dispatcher (cron "AI Contacts: Run AI Replies") ---
+
+    @api.model
+    def _dispatch_candidates(self, exclude=(), limit=1, grace=0):
+        """Conversations with a due job, for the dispatcher.
+
+        One row per conversation: its newest pending job, or its newest job
+        left 'running' for STALE_RUNNING_SECONDS (lost owner). A conversation
+        is due when that job is due (``run_after`` reached, plus ``grace``
+        seconds in "thread" mode, where the creating process runs fresh jobs
+        itself) and nobody holds its advisory lock: a live owner (another
+        dispatcher, a "thread" mode worker, the bridge) keeps it, so a job is
+        never run twice at the same time. One query, plus one on pg_locks.
+
+        Returns:
+            tuple: (list of discuss.channel ids, oldest first, at most
+            `limit`; seconds until the next pending job is due or None)
+        """
+        self.flush_model()
+        cr = self.env.cr
+        cr.execute("""
+            SELECT DISTINCT ON (channel_id) channel_id, id, state,
+                   EXTRACT(EPOCH FROM (COALESCE(run_after, create_date) - (statement_timestamp() AT TIME ZONE 'UTC')))
+              FROM woow_ai_job
+             WHERE state = 'pending'
+                OR (state = 'running'
+                    AND started_at < (statement_timestamp() AT TIME ZONE 'UTC') - make_interval(secs => %s))
+             ORDER BY channel_id, id DESC
+        """, (STALE_RUNNING_SECONDS,))
+        exclude = set(exclude or ())
+        due, next_due = [], None
+        for channel_id, job_id, state, due_in in cr.fetchall():
+            if channel_id in exclude:
+                continue
+            due_in = float(due_in or 0) + (grace if state == 'pending' else 0)
+            if state == 'running' or due_in <= 0:
+                due.append((job_id, channel_id))
+            elif next_due is None or due_in < next_due:
+                next_due = due_in
+        if not due:
+            return [], next_due
+        due.sort()
+        cr.execute("""
+            SELECT objid FROM pg_locks
+             WHERE locktype = 'advisory' AND granted
+               AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+               AND classid = %s AND objsubid = 2 AND objid = ANY(%s)""",
+                   (LOCK_NAMESPACE, [channel_id for _job, channel_id in due]))
+        locked = {row[0] for row in cr.fetchall()}
+        channels = [channel_id for _job, channel_id in due if channel_id not in locked]
+        if locked:
+            next_due = min(next_due, DISPATCH_BUSY_RETRY_SECONDS) if next_due is not None \
+                else DISPATCH_BUSY_RETRY_SECONDS
+        return channels[:max(0, limit)], next_due
+
+    @api.model
+    def _due_job_id(self, channel_id, grace=0):
+        """Newest job of `channel_id` if it is due (see _dispatch_candidates), else False."""
+        self.flush_model()
+        self.env.cr.execute("""
+            SELECT id, state, EXTRACT(EPOCH FROM (COALESCE(run_after, create_date) - (statement_timestamp() AT TIME ZONE 'UTC')))
+              FROM woow_ai_job
+             WHERE channel_id = %s
+               AND (state = 'pending'
+                    OR (state = 'running'
+                        AND started_at < (statement_timestamp() AT TIME ZONE 'UTC') - make_interval(secs => %s)))
+             ORDER BY id DESC LIMIT 1
+        """, (channel_id, STALE_RUNNING_SECONDS))
+        row = self.env.cr.fetchone()
+        if not row:
+            return False
+        job_id, state, due_in = row
+        if state == 'pending' and float(due_in or 0) + grace > 0:
+            return False
+        return job_id
+
+    @api.model
+    def _dispatch_settings(self, runner):
+        """Concurrency and time budget of one dispatcher pass, read once per pass.
+
+        Budget: the cron time limit (as Odoo applies it to this pass), minus
+        what the pass already used (threaded: since the pass started; prefork:
+        the worker's idle sleep, which counts on the watchdog), minus the
+        longest timeout and WORKER_LIMIT_MARGIN_SECONDS, at most
+        MAX_DISPATCH_SECONDS, at least 0 (start one batch, then stop claiming).
+        """
+        thread = threading.current_thread()
+        threaded = getattr(thread, 'type', None) == 'cron'
+        limit = _cron_limit(threaded)
+        if threaded and getattr(thread, 'start_time', None):
+            used = max(0.0, time.time() - thread.start_time)
+        else:
+            used = 0.0 if threaded else PREFORK_PASS_RESERVE_SECONDS
+        if limit:
+            budget = limit - used - runner['max_timeout'] - WORKER_LIMIT_MARGIN_SECONDS
+        else:
+            budget = MAX_DISPATCH_SECONDS
+        budget = max(0.0, min(float(budget), MAX_DISPATCH_SECONDS))
+        try:
+            wanted = int(self.env['ir.config_parameter'].sudo().get_param(CONCURRENCY_PARAM)
+                         or DEFAULT_CONCURRENCY)
+        except (TypeError, ValueError):
+            wanted = DEFAULT_CONCURRENCY
+        concurrency = max(1, min(wanted, MAX_CONCURRENCY))
+        free = _pool_free_connections()
+        if free is not None:
+            # each running reply holds a cursor, plus a short one for "typing";
+            # keep two for the pass itself (small db_maxconn of cron pods)
+            concurrency = max(1, min(concurrency, (free - 2) // 2))
+        return {'concurrency': concurrency, 'budget': budget, 'cron_limit': limit, 'used': used}
+
+    @api.model
+    def _dispatch_release_cursor(self):
+        """End the cron's own transaction before the pass: no snapshot stays
+        open (idle in transaction) while replies run on other cursors."""
+        self.env.cr.commit()
+
+    @api.model
+    def _cron_run_jobs(self):
+        """Cron callback: dispatch the due AI replies (see the module docstring).
+
+        Returns the number of conversations handled in this pass."""
+        runner = self._job_runner(refresh=True)
+        if runner['mode'] != 'cron':
+            # "thread" mode: the creating process runs fresh jobs; recover the lost ones
+            return self._cron_recover_jobs()
+        if not self.env.context.get('cron_id'):
+            # "Run Manually" from the cron form: never wait for replies in a web worker
+            cron = self.env.ref(DISPATCH_CRON_XMLID, raise_if_not_found=False)
+            if cron:
+                cron.sudo()._trigger()
+            return 0
+        settings = self._dispatch_settings(runner)
+        db_name = self.env.cr.dbname
+        self._dispatch_release_cursor()
+        dispatcher = Dispatcher(
+            fetch=lambda exclude, limit: _dispatch_fetch(db_name, 0, exclude, limit),
+            run_unit=lambda channel_id: _channel_worker(db_name, 0, channel_id),
+            concurrency=settings['concurrency'],
+            budget=settings['budget'],
+            poll_interval=DISPATCH_POLL_SECONDS,
+            idle_wait=DISPATCH_IDLE_WAIT_SECONDS,
+            busy_retry=DISPATCH_BUSY_RETRY_SECONDS,
+            name='woow_ai_contact.dispatch',
+        )
+        stats = dispatcher.run()
+        if stats['retrigger_in'] is not None:
+            with _job_cursor(db_name) as cr:
+                env = api.Environment(cr, SUPERUSER_ID, {})
+                cron = env.ref(DISPATCH_CRON_XMLID, raise_if_not_found=False)
+                if cron:
+                    at = None
+                    if stats['retrigger_in'] > 0:
+                        at = fields.Datetime.now() + timedelta(seconds=stats['retrigger_in'])
+                    cron._trigger(at)
+        if stats['started'] or stats['budget_reached']:
+            _logger.info("AI contacts: dispatcher pass: %(started)s conversation(s), at most %(max_parallel)s "
+                         "at once, %(fetches)s fetches, budget reached: %(budget_reached)s, next run in "
+                         "%(retrigger_in)s s", stats)
+        return stats['started']
+
     # --- Recovery cron ---
 
     @api.model
@@ -530,11 +880,13 @@ class WoowAiJob(models.Model):
 
     @api.model
     def _cron_recover_jobs(self, commit=True):
-        """Run jobs whose thread was lost (restart, crash, worker recycled).
+        """"thread" mode recovery: run jobs whose thread was lost (restart,
+        crash, worker recycled), as before the dispatcher existed.
 
         Channels whose lock is held (a job is being processed) are left alone.
-        The work is handed to threads (a reply can take longer than the cron
-        watchdog). Returns the number of jobs handed over.
+        The work is handed to threads (in this mode the cron may not wait for
+        replies: its time limit is too short). Returns the number of jobs
+        handed over. ``commit=False`` (tests) runs them in this transaction.
         """
         jobs = self.search(self._recovery_domain(), order='id', limit=CRON_SEARCH_LIMIT)
         if not jobs:

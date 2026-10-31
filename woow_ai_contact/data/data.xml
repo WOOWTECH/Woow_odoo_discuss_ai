@@ -5,13 +5,16 @@
             <field name="name">AI Contact</field>
         </record>
 
-        <record id="ir_cron_recover_ai_jobs" model="ir.cron">
-            <field name="name">AI Contacts: Recover Reply Jobs</field>
+        <!-- Dispatcher: runs the AI replies in the cron process (triggered by every
+             new job; the interval is the recovery of lost jobs). See ai_job.py. -->
+        <record id="ir_cron_run_ai_jobs" model="ir.cron">
+            <field name="name">AI Contacts: Run AI Replies</field>
             <field name="model_id" ref="model_woow_ai_job"/>
             <field name="state">code</field>
-            <field name="code">model._cron_recover_jobs()</field>
-            <field name="interval_number">2</field>
+            <field name="code">model._cron_run_jobs()</field>
+            <field name="interval_number">1</field>
             <field name="interval_type">minutes</field>
+            <field name="priority">1</field>
             <field name="active" eval="True"/>
         </record>
 
@@ -25,4 +28,7 @@
             <field name="active" eval="True"/>
         </record>
     </data>
+    <!-- 18.0.1.0.0 had a separate recovery cron: merged into the dispatcher -->
+    <delete model="ir.cron" search="[('code', '=', 'model._cron_recover_jobs()')]"/>
+    <delete model="ir.actions.server" search="[('usage', '=', 'ir_cron'), ('code', '=', 'model._cron_recover_jobs()')]"/>
 </odoo>

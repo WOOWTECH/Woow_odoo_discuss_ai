@@ -151,6 +151,10 @@ class WoowAiContact(models.Model):
              'They contain private conversations. Turning it off erases stored content.',
     )
     call_log_count = fields.Integer(compute='_compute_call_log_count', groups='base.group_system')
+    job_runner_info = fields.Text(string='Reply Processing', compute='_compute_job_runner_info',
+                                  groups='base.group_system',
+                                  help='Where the AI replies are processed (docs/DESIGN.md, job queue).')
+    job_runner_warning = fields.Boolean(compute='_compute_job_runner_info', groups='base.group_system')
 
     _sql_constraints = [
         ('partner_uniq', 'unique(partner_id)', 'Each bot partner can belong to one AI contact only.'),
@@ -325,6 +329,8 @@ class WoowAiContact(models.Model):
             self.env['woow.ai.call.log'].sudo()._erase_payloads(self.ids)
         if {'active', 'allowed_group_ids'} & set(vals):
             self._sync_partner_active()
+        if {'active', 'timeout_seconds'} & set(vals):
+            self.env['woow.ai.job']._runner_cache_clear()
         return res
 
     def copy_data(self, default=None):
@@ -454,6 +460,52 @@ class WoowAiContact(models.Model):
         self.ensure_one()
         prepared = self._prepare_reply({'text': text}, channel=channel)
         return self._post_prepared(channel, prepared)
+
+    # --- Reply processing ---
+
+    @api.depends_context('uid')
+    def _compute_job_runner_info(self):
+        info = self.env['woow.ai.job']._job_runner()
+        limit = info['cron_limit']
+        env = self.env
+        lines = []
+        if info['mode'] == 'cron':
+            lines.append(env._('Replies are processed in the background by the scheduled action '
+                               '"AI Contacts: Run AI Replies", outside the web workers (at most %(n)s '
+                               'conversations at a time).', n=env['ir.config_parameter'].sudo().get_param(
+                                   'woow_ai_contact.max_concurrency') or 4))
+        else:
+            lines.append(env._('Replies are processed in a background thread of the web worker that received '
+                               'the message (fallback mode): a reply still running when that worker restarts '
+                               'is cut and processed again.'))
+        reasons = {
+            'cron_runner': env._('A cron runner is available (%(where)s).',
+                                 where=env._('this server') if info['cron_runner'] == 'local'
+                                 else env._('another process')),
+            'no_cron_runner': env._('No cron runner was found: max_cron_threads is 0 in this server, or it '
+                                    'runs with --stop-after-init, and no other process ran the scheduled action '
+                                    'recently.'),
+            'cron_limit_too_low': env._('The cron time limit (%(limit)s s) is shorter than the longest AI contact '
+                                        'timeout plus margins (%(required)s s). Set limit_time_real_cron to at least '
+                                        '%(required)s to process replies in the cron runner.',
+                                        limit=limit, required=info['required']),
+            'forced_thread': env._('Forced by the system parameter woow_ai_contact.job_runner = thread.'),
+            'forced_cron': env._('Forced by the system parameter woow_ai_contact.job_runner = cron.'),
+            'forced_cron_limit_too_low': env._(
+                'Forced by the system parameter woow_ai_contact.job_runner = cron, but the cron time limit '
+                '(%(limit)s s) is shorter than the longest timeout plus margins (%(required)s s): a long reply '
+                'is cut when the cron worker is stopped, and processed again.',
+                limit=limit, required=info['required']),
+        }
+        lines.append(reasons.get(info['reason'], info['reason']))
+        if limit:
+            lines.append(env._('Cron time limit: %(limit)s s (%(server)s server); longest timeout: %(timeout)s s.',
+                               limit=limit, server=info['server'], timeout=info['max_timeout']))
+        text = '\n'.join(lines)
+        warning = info['reason'] in ('no_cron_runner', 'cron_limit_too_low', 'forced_cron_limit_too_low')
+        for contact in self:
+            contact.job_runner_info = text
+            contact.job_runner_warning = warning
 
     # --- Call logs ---
 

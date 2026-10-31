@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'AI Contacts for Discuss',
-    'version': '18.0.1.0.0',
+    'version': '18.0.1.1.0',
     'category': 'Productivity/Discuss',
     'summary': 'Chat one-to-one with AI contacts (Hermes, LiteLLM, n8n) in Discuss and the portal',
     'description': """
@@ -12,8 +12,9 @@ Internal and portal users chat one-to-one with "AI contacts" in Discuss.
 Each AI contact is a bot partner connected to an OpenAI compatible backend
 (Hermes, LiteLLM, any /v1/chat/completions) or an n8n webhook.
 
-* Durable reply queue: replies are produced after commit by a background
-  worker, one at a time per conversation, recovered after a restart
+* Durable reply queue: replies are produced by a scheduled action in the cron
+  process (never in a web worker), one at a time per conversation, several
+  conversations in parallel, recovered after a restart
 * "typing" indicator while the backend answers, 5 minute default timeout;
   OpenAI compatible answers streamed (SSE) so proxies do not cut long answers
 * Attachments both ways: user images inlined for OpenAI compatible backends,
