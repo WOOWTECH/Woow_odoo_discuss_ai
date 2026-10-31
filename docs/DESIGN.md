@@ -38,13 +38,24 @@ Odoo 18。讓內部用戶與 portal 用戶在 Discuss 裡和「AI 聯絡人」�
 | `log_payload` | 預設 False；開了才在呼叫紀錄存請求／回應內容（除錯用，會提示隱私） | 系統管理員 |
 
 ### `woow.ai.job`（回覆工作）
-沿用 `im_livechat_ai` 1.1.0 C 包的設計並一般化：
-- 使用者訊息與 job 在同一交易建立；commit 後（`cr.postcommit`）起 worker thread（非 daemon），debounce 1.5 秒。
-- prefork worker 達到記憶體／請求數上限要回收時會等這些 thread，但等待期間不再回報 master，master 在 `limit_time_real` 後 SIGKILL，回覆被切斷、復原 cron 會重跑（後端再被呼叫一次）。**`limit_time_real` 要大於 `timeout_seconds` 加下載時間**（不足時第一次處理該 AI 聯絡人就記 warning，`_warn_worker_limits`，餘裕 60 秒）。把長呼叫移出 HTTP worker、或「已呼叫過後端的 job 復原時不重呼叫」屬架構／定案層級，待負責人決定（與定案 8「重啟不掉單」取捨）。
+沿用 `im_livechat_ai` 1.1.0 C 包的設計並一般化；**定案 29（18.0.1.1.0）起，等 AI 回覆的工作移出 HTTP 網頁程序**：
+- 使用者訊息與 job 在同一交易建立（pending，`run_after`＝debounce 1.5 秒後）；HTTP 請求只做 `ir.cron._trigger()`（呼叫時間＝現在：Odoo 在 commit 後送 `NOTIFY cron_trigger`，閒置的 cron worker／cron thread 立刻醒來；未來時間的 trigger 不送 NOTIFY，最慢要等 cron 的 60 秒輪詢，所以 debounce 由 dispatcher 依 `run_after` 自己等）。**HTTP 程序不再起任何執行緒**。
+- 排程動作「AI Contacts: Run AI Replies」（`ir_cron_run_ai_jobs`，每 1 分鐘，priority 1；原本 2 分鐘的復原 cron 併入，18.0.1.0.0 的 `ir_cron_recover_ai_jobs` 在升級時刪除）的回呼 `_cron_run_jobs` 是 dispatcher（`tools/dispatcher.py`，不含 Odoo 的純 Python，單元測試）：
+  - 抓到期的對話（`_dispatch_candidates`：每個頻道取最新一筆 pending 或「running 超過 60 秒」的 job；到期＝`run_after` 已到；channel 的 advisory lock 有人握著＝主人還活著，不碰），每段對話一條執行緒、各自的 READ COMMITTED cursor，**在 cron 程序內**跑（`_channel_worker`：最新那筆先跑，舊的被 supersede；跑完再看同頻道有沒有新到期的）。
+  - 同時最多 `woow_ai_contact.max_concurrency`（預設 4，上限 16）段對話；另依本程序連線池剩餘連線限制（每段回覆一條 cursor＋「輸入中」短 cursor，留 2 條給 dispatcher；平台 cron pod `db_maxconn = 6` 時自動降到 2）。
+  - 回覆進行中每 2 秒查一次有沒有新的到期對話（一個查詢；實測 150 秒回覆 79 次＝約 0.5 次／秒）；沒有執行中、但 20 秒內有 job 會到期（debounce、延後的 job）就等它，不然結束。不用 LISTEN（多佔一條連線，平台 cron pod 連線很少）。
+  - 時間預算：`limit_time_real_cron`（prefork：`-1`＝`limit_time_real`、`0`＝不限；threaded：>0 才用，否則 `limit_time_real`）減去本趟已用的時間（threaded：cron thread 的 `start_time`，精確；prefork：WorkerCron 在閒置 `SLEEP_INTERVAL + pid%10` 秒**之前**才回報看門狗，保守扣 70 秒）、減最長逾時與 60 秒餘裕，最多 300 秒。預算用完就不再接新的、**等執行中的全部 join 完**、有剩餘工作就再 `_trigger()` 自己後返回。所以 cron worker 只會在兩趟之間回收（`limit_request`、記憶體、`limit_time_worker_cron` 都是在 `process_work` 之後才檢查），不會帶著進行中的 AI 呼叫被回收。
+  - 鎖忙的對話（別的程序在處理）5 秒後再試；job 可以 `_defer(秒數, 原因)` 延後自己（橋接在 1.1.0 還握著對話鎖時用，15 秒），dispatcher 在同一趟等它，並在到期時間 `_trigger` 一次當備援（以前要等 2 分鐘的復原 cron）。
+  - 同一個 cron 不會兩個 worker 同時跑（ir.cron 的 `FOR NO KEY UPDATE SKIP LOCKED`）；跨程序（備援模式的執行緒、另一個 dispatcher）靠每個頻道的 advisory lock：拿不到就不跑，拿到後重讀狀態（READ COMMITTED），已 done 的不會再呼叫後端。「Run Manually」從網頁按下時只 `_trigger`，不在網頁程序等回覆。
+  - 回呼開始時先 commit cron 自己的交易，等回覆期間不留開著的 snapshot。
+- **模式**（`_job_runner`，每個資料庫快取 60 秒，改變時記一次 log，AI 聯絡人表單「回覆處理方式」顯示）：系統參數 `woow_ai_contact.job_runner` = `auto`（預設）／`cron`／`thread`。auto：有 cron 執行者（本程序 `max_cron_threads` > 0 且不是 `--stop-after-init`／測試，或 10 分鐘內有 dispatcher 跑過＝cron 在別的程序，例如平台 web pod `max_cron_threads = 0`、cron 在獨立 pod）**且** cron 時限 ≥ 最長逾時＋60 秒（prefork 再＋70 秒）→ `cron`；否則 `thread`（備援：commit 後在建立 job 的程序起非 daemon 執行緒，就是 18.0.1.0.0 的做法，cron 只做復原、交給執行緒後立刻返回）。強制 `cron` 但時限不夠時表單警告（長回覆會在 cron worker 被看門狗砍掉時中斷並重跑）。
+- **部署注意**：PaaS 租戶 chart 預設 `workers = 2`、`limit_time_real = 120`、`limit_time_real_cron = -1`（＝120 秒），不夠 300 秒逾時 → auto 會留在備援模式（行為與 18.0.1.0.0 相同，不會更差）。要用排程模式須把 `limitTimeRealCron` 設到至少 430（建議 600）；平台 cron pod（threaded、`limit_time_real_cron = 1800`）已足夠。
 - 每個 `discuss.channel` 一把 PostgreSQL advisory lock；同頻道只處理最新一筆（較舊的 skipped），最新那筆帶完整歷史。
-- 復原 cron 每 2 分鐘接手 pending／running 卡住的 job；每筆最多 3 次；超過 30 分鐘放棄。
+- 每筆最多 3 次；超過 30 分鐘放棄；處理中當掉（還沒 claim 就例外）的 job 60 秒後才再試，不會被同一趟一直撿起來。
 - 呼叫後端前與張貼前都再檢查一次（是否有更新的 job、livechat 是否暫停）。
 - 欄位：`channel_id`、`contact_id`、`message_id`（觸發訊息）、`kind`（reply／handoff）、`state`、`run_count`、`run_after`、`error`、`reply_message_id`。
+- 預設訊息（錯誤、回覆內註記、無權限）的語言：身分語言沒安裝時退回目前語言或 en_US（`woow.ai.contact._installed_lang`；以前會丟「Invalid language code」讓 `_give_up` 中斷、job 卡在 running）。
+- 查詢數（沙盒實測，`sbx/live/measure_queries.py`）：建歷史＋組請求與歷史長度無關（約 12 個查詢）；整筆 job（openai，每則 2 個附件）4 則 83→76、20 則 122→75（附件的 prefetch 在 commit 清快取後失效，改成整段上下文共用一組 id）；張貼回覆 3 個檔案 32→30（附件一次 create）。系統參數（`database.uuid`／`secret`、`web.base.url`）本來就是 ormcache，每個 job 0 查詢。
 
 ### `woow.ai.call.log`（呼叫紀錄，只有系統管理員可讀）
 `contact_id`、`channel_id`、`job_id`、`backend_type`、`status`（ok／http_error／timeout／invalid_response／error）、`http_status`、`duration_ms`、`prompt_tokens`／`completion_tokens`／`total_tokens`（openai 回應的 `usage`，沒有就是 0）、`error`（截斷；回覆中殘留 `MEDIA:` 路徑、內嵌圖被拒也記在這裡，狀態仍是 ok）、`request_payload`／`response_payload`（只有 `log_payload` 開時才存，data URI 與 base64 只留長度）。每日清除 30 天前的紀錄。
@@ -198,7 +209,7 @@ Authorization: Bearer <push key>      # 對應到某個 AI 聯絡人
 ## 實作補充與差異（18.0.1.0.0）
 
 - **Bridge 掛勾**（給 `woow_ai_contact_livechat`）：`discuss.channel._woow_ai_channel_contact()`（這個頻道由哪個 AI 聯絡人回答；核心＝含機器人成員的 chat）、`_woow_ai_check_author()`（ok／denied／ignore）、`_woow_ai_message_kind()`（reply／handoff／None）、`_woow_ai_is_paused()`、`_woow_ai_author_role()`（歷史角色與前綴，例如「[真人客服 名字]」）、`_woow_ai_requester()`（身分要送誰）、`_woow_ai_identity(contact)`（身分 dict，預設 `contact._identity(requester)`）、`_woow_ai_system_prompt(contact, history)`（預設 `contact.system_prompt`）、`_woow_ai_link_hosts(contact)`（預設 None）、`_woow_ai_channel_info()`（n8n 的 `channel` 物件）。`_woow_ai_handle_new_message(message)` 的契約：回傳建立的 `woow.ai.job` 或 False；**先算 kind 再檢查暫停**（kind 鉤子看得到每一則允許的訊息，暫停中就不建 job；橋接要在 `super()` 回傳 handoff job 之後才暫停）。`woow.ai.job` 的 `_process_handoff()`、`_notify_failure(reason, visitor_told=True)` 也是掛勾（太舊放棄傳 `visitor_told=False`，`_give_up` 傳 True）；核心版 handoff 直接 skipped、失敗只記 log（1 對 1 私訊裡使用者已看到錯誤訊息，沒有客服要通知）。`_skip_reply` 與張貼前都檢查 `channel._woow_ai_channel_contact() == job.contact_id`，不同就 `skipped`「AI turned off or contact changed」。
-- **佇列**：與 1.1.0 相同（postcommit 非 daemon thread、debounce 1.5 秒、每頻道 advisory lock、READ COMMITTED cursor、張貼前鎖頻道列再檢查一次、復原 cron 每 2 分鐘、每筆最多 3 次、30 分鐘放棄）。檔案下載在鎖頻道列**之前**做（不寫資料庫），鎖住後才建附件並張貼，避免長時間擋住使用者發訊。HTTP 呼叫期間沒有開著的交易（逾時秒數等設定在 commit 前先讀好）。
+- **佇列**：見上方 `woow.ai.job`（18.0.1.1.0 起在 cron 程序內處理；備援模式與 1.1.0 相同：postcommit 非 daemon thread）。每頻道 advisory lock、READ COMMITTED cursor、張貼前鎖頻道列再檢查一次、每筆最多 3 次、30 分鐘放棄。檔案下載在鎖頻道列**之前**做（不寫資料庫），鎖住後才建附件並張貼，避免長時間擋住使用者發訊。HTTP 呼叫期間沒有開著的交易（逾時秒數等設定在 commit 前先讀好）。
 - **輸入中**：開始呼叫時 `True`、張貼前 `False`；另起一個 daemon thread 用自己的 cursor 每 20 秒重送 `True`。沙盒實測 45 秒呼叫：True 於 0／20／40 秒、結束送 False。
 - **轉址**：後端呼叫（`_http_post`）與測試連線都不跟隨轉址（`allow_redirects=False`），3xx 視為 `http_error`；否則 307／308 會把整段對話、身分與簽名網址用純 http 重送到別的主機，301／302 會改成 GET 打任意網址。
 - **串流總時限**：沒有 chunked 編碼時 urllib3 一次讀 1024 位元組會等到湊滿或 EOF，小 keepalive 一直重設 socket 逾時，chunk 邊界的時限檢查就失效；`_StreamWatchdog` 在總時限到時 `shutdown` socket，讀取立刻返回並記 timeout。

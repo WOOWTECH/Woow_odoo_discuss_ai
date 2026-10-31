@@ -88,6 +88,18 @@ Every call carries:
 
 While the backend works the bot shows "typing…".
 
+Where Odoo waits: the call is made from the cron process (scheduled action
+*AI Contacts: Run AI Replies*), never from the web worker that received the
+user's message, so a web worker restart does not cut a long answer and the
+backend is called once per reply. Odoo must give that cron enough time:
+`limit_time_real_cron` (or `limit_time_real` when it is `-1`) at least the
+longest *Timeout* + 60 s, plus 70 s with prefork `workers`. When it does not
+(or no cron runs), Odoo falls back to a thread in the web worker and says so on
+the AI contact form; a reply cut by a worker restart is then sent again (a
+backend that runs tools may see the same request twice). Each conversation is
+processed by one caller at a time, up to `woow_ai_contact.max_concurrency`
+(default 4) conversations in parallel.
+
 ### Cloudflare and other proxies (about 100 s)
 
 Backends reached through Cloudflare (public hostnames) get HTTP 524 when no

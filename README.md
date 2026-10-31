@@ -16,10 +16,12 @@ server) or to an n8n webhook.
 
 - Direct chats with AI contacts from the Discuss sidebar ("AI Contacts"),
   from the portal (`/my` card → `/my/ai`) or from the normal chat search.
-- Replies are produced in the background after the user's message is saved:
-  one reply per conversation at a time (quick messages get one answer),
-  "typing…" while the backend works, 5-minute default timeout, jobs resumed
-  by a cron after a restart.
+- Replies are produced in the background after the user's message is saved,
+  by the scheduled action *AI Contacts: Run AI Replies* in the **cron process**
+  (never in a web worker, so web worker restarts do not cut long answers):
+  one reply per conversation at a time (quick messages get one answer), up to
+  4 conversations in parallel, "typing…" while the backend works, 5-minute
+  default timeout, jobs resumed after a restart. See *Server requirements*.
 - OpenAI-compatible answers are streamed (SSE) by default, so long Hermes tool
   chains are not cut by proxies such as Cloudflare (about 100 s without data).
 - Bounded retries: only connection failures and HTTP 429/503 (0–2 times,
@@ -69,6 +71,30 @@ Settings → AI Contacts → AI Contacts → New (system administrators only).
 | Allowed Groups | who may chat with it (default Internal User + Portal); empty = no direct chats (Live Chat only), the bot partner stays archived |
 | Push API | *Generate Push Key* shows the key once |
 | Debug | *Log Request Content* — keep off except while debugging |
+
+### Server requirements (where replies run)
+
+The web request only saves the message and wakes the cron runner; the cron
+"AI Contacts: Run AI Replies" waits for the backend in the cron process and
+returns only when its replies are posted. The AI contact form (Backend tab,
+*Reply Processing*) shows the mode in use.
+
+- **Cron mode** (normal): needs a cron runner (`max_cron_threads` ≥ 1 in this
+  server, or crons running in another process of the same database) and a
+  cron time limit long enough for the longest *Timeout*:
+  `limit_time_real_cron` (or `limit_time_real` when it is `-1`) ≥ longest
+  timeout + 60 s, **+ 70 s with `workers` > 0** (a prefork cron worker's idle
+  sleep counts on its watchdog). Default timeout 300 s → `limit_time_real_cron
+  = 430` or more (e.g. 600). With `max_cron_threads = 1` other scheduled
+  actions wait while replies run: 2 or more is recommended.
+- **Fallback (thread) mode**: without a cron runner, or when the cron time
+  limit is too short, replies run in a thread of the web worker that saved the
+  message (the 18.0.1.0.0 behaviour): a web worker that restarts during a long
+  reply cuts it and the reply is processed again. A warning is logged once and
+  shown on the form.
+- System parameters: `woow_ai_contact.job_runner` = `auto` (default) | `cron` |
+  `thread`; `woow_ai_contact.max_concurrency` (default 4, at most 16; also
+  limited by free database connections of the cron process).
 
 ### Hermes
 

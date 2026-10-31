@@ -81,7 +81,7 @@ AI 聯絡人表單的「存取」分頁會列出用到它的 Live Chat 頻道。
 | 遷移只靠版本號 | 搬移同時要求版本 ≥ 18.0.1.1.0 **且** 舊金鑰欄 `ai_api_key` 已不存在 |
 | widget 標題是真人客服名字、模型會自稱別的身分 | 未處理（Odoo 原生 widget）；建議在 AI 聯絡人的提示詞固定身分與名稱、機器人放頭像 |
 | 沒有客服在線時 widget 不出現 | 未處理（Odoo 核心行為，AI 不改變；要下班時間服務需另外設計） |
-| 恢復延遲 60–98 秒、只靠 cron | 核心佇列相同（重啟後由 cron 補回），cron 程序要有監控 |
+| 恢復延遲 60–98 秒、只靠 cron | 核心 18.0.1.1.0 起回覆本來就在 cron 程序處理（每分鐘也補回遺失的 job），cron 程序要有監控、`limit_time_real_cron` 要夠（README「Server requirements」） |
 
 另外：
 - 商品工具、`temperature`、`max_tokens`、模型下拉、每頻道機器人名稱／錯誤訊息都不在頻道上了（跟著 AI 聯絡人）；Live Chat 管理員不能改模型與提示詞（權限變嚴，刻意）。
@@ -127,7 +127,7 @@ AI 聯絡人表單的「存取」分頁會列出用到它的 Live Chat 頻道。
 2. `woow_ai_enabled` ＝ 1.1.0 原本的開關**或**目前已開著（原本關著的頻道切過去仍是關的；Live Chat 管理員已在 1.1.0 關掉的頻道上手動開了 AI 聯絡人的，維持開著）。狀態 `switched`。
 3. 仍未到期的 1.1.0 暫停搬到 `woow_ai_paused_until`（取較晚者）。
 4. 1.1.0 未完成（pending 或 running、30 分鐘內）的工作：切換後 1.1.0 會把它們全部跳過（`_skip_reply` 先看 `ai_enabled`），所以都要搬。每段對話先 `pg_try_advisory_xact_lock` 1.1.0 的鎖（`crc32('im_livechat_ai.job')`、對話 id）；拿到鎖就把 pending 與當機留下的 running 都建成同 kind、同訊息的 `woow.ai.job`，舊工作標 `skipped`。拿不到鎖表示 1.1.0 正在回這段對話：它正在跑的那筆留給它（但只要後面還有較新的 1.1.0 工作，它不論狀態都會被 `_has_newer_job` 跳過），後面 pending 的照樣搬。
-   搬過來的回覆工作在 1.1.0 還握著這段對話的鎖時不呼叫後端，保持 pending、15 秒後由復原 cron 再試（橋接 `woow.ai.job._process_locked`）；1.1.0 已完成且其 LLM context 已涵蓋觸發訊息的（`context_message_id` ≥ 訊息 id、有回覆）視為已回答（`_already_answered`），不重複回答。
+   搬過來的回覆工作在 1.1.0 還握著這段對話的鎖時不呼叫後端，保持 pending、15 秒後再試（核心 `_defer`：dispatcher 在同一趟等它，並在到期時間觸發 cron；以前要等 2 分鐘的復原 cron。橋接 `woow.ai.job._process_locked`）；1.1.0 已完成且其 LLM context 已涵蓋觸發訊息的（`context_message_id` ≥ 訊息 id、有回覆）視為已回答（`_already_answered`），不重複回答。
 5. 搬移報告追加切換時間、操作者、搬了幾筆、當時 1.1.0 正在回的有幾段（等它回完後由 AI 聯絡人接著回）。
 
 「切回 im_livechat_ai」（只在 1.1.0 還裝著時）：`woow_ai_enabled = False`、1.1.0 `ai_enabled` 回到原本的值、狀態回 `staged`。新版還在排隊的工作會因「AI 已關或換聯絡人」跳過。暫停不會搬回 1.1.0。

@@ -30,6 +30,13 @@ Odoo 18 模組：讓內部用戶與 portal 用戶在 Discuss 裡和「AI 聯絡�
 - **推送 API**：按「產生推送金鑰」，金鑰只顯示一次（只存雜湊）。
 - **除錯**：「記錄請求內容」平常請關閉。
 
+### 伺服器需求（回覆在哪裡處理）
+網頁請求只存訊息並喚醒排程工作；排程動作「AI 聯絡人：執行 AI 回覆」在 **cron 程序**裡等後端回覆、張貼後才結束，網頁程序回收不會再切斷長回覆。AI 聯絡人表單（後端分頁「回覆處理方式」）會顯示目前的模式。
+
+- **排程模式**（正常）：要有 cron（本伺服器 `max_cron_threads` ≥ 1，或同一資料庫的 cron 在別的程序跑），而且 cron 時限夠長：`limit_time_real_cron`（設 `-1` 時看 `limit_time_real`）≥ 最長逾時＋60 秒，**`workers` > 0 時再加 70 秒**（prefork 的 cron worker 閒置等待也算在看門狗時間內）。預設逾時 300 秒 → `limit_time_real_cron = 430` 以上（例如 600）。`max_cron_threads = 1` 時回覆進行中其他排程要等，建議 2 以上。
+- **備援（執行緒）模式**：沒有 cron，或 cron 時限不夠時，回覆在收到訊息的網頁程序背景執行緒處理（18.0.1.0.0 的做法）：長回覆途中該網頁程序重啟，回覆會被切斷並重跑。會記一次警告並顯示在表單上。
+- 系統參數：`woow_ai_contact.job_runner` = `auto`（預設）｜`cron`｜`thread`；`woow_ai_contact.max_concurrency`（預設 4，最多 16；另受 cron 程序可用的資料庫連線數限制）。
+
 ### Hermes
 後端網址 `https://<Hermes 主機>/v1`（或叢集內完整的 `http://<service>.<namespace>.svc.cluster.local:<port>/v1`，短服務名不接受），API 金鑰填 Hermes API server 金鑰，模型留空（Hermes 會忽略，用自己的設定），串流保持開啟。工具與記憶由 Hermes 自己處理。Hermes 不讀 `user`／`metadata`，使用者身分（姓名、語言、時區、內部或 portal，不含 email）放在 system 訊息裡讓模型看得到。
 
@@ -42,6 +49,7 @@ Odoo 18 模組：讓內部用戶與 portal 用戶在 Discuss 裡和「AI 聯絡�
 ## 使用
 
 - 後台：Discuss 側欄「AI 聯絡人」區塊，點一下就開啟（或建立）私訊。
+- 回覆在背景由 cron 程序處理：同一段對話一次一則（連發只回最新、帶完整上下文），最多 4 段對話同時進行，處理中顯示「輸入中」，預設逾時 5 分鐘，重啟不掉單。
 - portal：`/my` 首頁「AI 聯絡人」卡片 → `/my/ai` → 開始對話。
 - 可傳圖片與檔案（OpenAI 相容後端每次最多內嵌 4 張、約 7 MB，其餘給 1 小時簽名網址）；AI 回覆支援表格、清單、程式碼，白名單網域的圖片／檔案、n8n base64 檔案、回覆中的 `data:image` 內嵌圖都會存成附件。
 
