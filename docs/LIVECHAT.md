@@ -114,7 +114,7 @@ AI 聯絡人表單的「存取」分頁會列出用到它的 Live Chat 頻道。
 ### 準備（安裝時自動；頻道表單「重新準備」）
 
 - 條件：`im_livechat_ai` 已安裝、版本 ≥ 18.0.1.1.0、舊的每頻道金鑰欄 `ai_api_key` 已不存在（18.0.1.0.x 外洩過的金鑰永不讀）。不符合只記 warning，不做事。1.1.0 的資料一律用 SQL 讀，不依賴它的程式。
-- 要搬的頻道：1.1.0 `ai_enabled` 為 True、或有提示詞、或有機器人 partner（1.1.0 升級時把所有頻道的 AI 關掉，只看開關會漏）。已經有 AI 聯絡人的頻道跳過（可重跑）。
+- 要搬的頻道：1.1.0 `ai_enabled` 為 True、或有提示詞、或有機器人 partner（1.1.0 升級時把所有頻道的 AI 關掉，只看開關會漏）。已經有 AI 聯絡人的頻道不重建聯絡人（可重跑）；若狀態還是 `none`（Live Chat 管理員在準備能跑之前就手動選了聯絡人），保留它的聯絡人與設定、記下 `woow_ai_legacy_*`，1.1.0 還開著 → `staged`，1.1.0 已關 → `switched`（沒有東西要切換），否則「完成搬移」會永遠擋在這個頻道。
 - 依 `(ai_model, 提示詞, 機器人名稱, 錯誤訊息, ai_max_history, ai_max_retries)` 分組，每組建一個 openai 型 AI 聯絡人：網址＝`im_livechat_ai.base_url`（去掉結尾 `/` 與 `/chat/completions`，不是 https 就留空）、金鑰＝`im_livechat_ai.api_key`（只寫進 SQL 欄位、不記錄）、模型、提示詞＋1.1.0「沒工具」商品規則原文（換成能查價的後端後由管理員刪掉）、`max_history`、`max_retries`、錯誤訊息、逾時 120 秒、串流、`allowed_group_ids` 空、不記內容。組內第一個頻道的機器人 partner（沒有使用者、不是共用機器人、沒被別的聯絡人用）直接沿用，訪客看到的名字與頭像不變。
 - 頻道寫入：AI 聯絡人、`woow_ai_enabled = False`、暫停分鐘數、關鍵字（1.1.0 預設值換新預設）、轉真人訊息、`woow_ai_legacy_bot_partner_id`、`woow_ai_legacy_enabled`、狀態 `staged`、搬移報告（是否靠商品工具、遺失的 temperature／max tokens、待填的網址或金鑰）。
 - **1.1.0 完全不動、繼續回覆**。安裝不等於切換：切換前商品工具仍在。
@@ -124,10 +124,11 @@ AI 聯絡人表單的「存取」分頁會列出用到它的 Live Chat 頻道。
 頻道表單「從 im_livechat_ai 切換…」→ 精靈要勾「新後端已通過價格回歸測試」才有「切換」按鈕。前置：狀態 `staged`、AI 聯絡人有效且網址與金鑰都已填。
 
 1. SQL 關掉這個頻道的 1.1.0 `ai_enabled`。
-2. `woow_ai_enabled` ＝ 1.1.0 原本的開關（原本關著的頻道切過去仍是關的）。狀態 `switched`。
+2. `woow_ai_enabled` ＝ 1.1.0 原本的開關**或**目前已開著（原本關著的頻道切過去仍是關的；Live Chat 管理員已在 1.1.0 關掉的頻道上手動開了 AI 聯絡人的，維持開著）。狀態 `switched`。
 3. 仍未到期的 1.1.0 暫停搬到 `woow_ai_paused_until`（取較晚者）。
-4. 1.1.0 還沒跑過（pending、0 次、30 分鐘內）的工作：每段對話先 `pg_try_advisory_xact_lock` 1.1.0 的鎖（`crc32('im_livechat_ai.job')`、對話 id）；拿到鎖就建同 kind、同訊息的 `woow.ai.job`，舊工作標 `skipped`；拿不到鎖表示 1.1.0 正在回這段對話，讓它回完（只會回一次），不搬。
-5. 搬移報告追加切換時間、操作者、搬了幾筆、留給 1.1.0 幾段。
+4. 1.1.0 未完成（pending 或 running、30 分鐘內）的工作：切換後 1.1.0 會把它們全部跳過（`_skip_reply` 先看 `ai_enabled`），所以都要搬。每段對話先 `pg_try_advisory_xact_lock` 1.1.0 的鎖（`crc32('im_livechat_ai.job')`、對話 id）；拿到鎖就把 pending 與當機留下的 running 都建成同 kind、同訊息的 `woow.ai.job`，舊工作標 `skipped`。拿不到鎖表示 1.1.0 正在回這段對話：它正在跑的那筆留給它（但只要後面還有較新的 1.1.0 工作，它不論狀態都會被 `_has_newer_job` 跳過），後面 pending 的照樣搬。
+   搬過來的回覆工作在 1.1.0 還握著這段對話的鎖時不呼叫後端，保持 pending、15 秒後由復原 cron 再試（橋接 `woow.ai.job._process_locked`）；1.1.0 已完成且其 LLM context 已涵蓋觸發訊息的（`context_message_id` ≥ 訊息 id、有回覆）視為已回答（`_already_answered`），不重複回答。
+5. 搬移報告追加切換時間、操作者、搬了幾筆、當時 1.1.0 正在回的有幾段（等它回完後由 AI 聯絡人接著回）。
 
 「切回 im_livechat_ai」（只在 1.1.0 還裝著時）：`woow_ai_enabled = False`、1.1.0 `ai_enabled` 回到原本的值、狀態回 `staged`。新版還在排隊的工作會因「AI 已關或換聯絡人」跳過。暫停不會搬回 1.1.0。
 

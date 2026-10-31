@@ -21,8 +21,9 @@ msgstr ""
 #: code:addons/woow_ai_contact_livechat/wizard/switch_wizard.py:0
 msgid ""
 "%(moved)s waiting job(s) moved; %(busy)s conversation(s) were being answered"
-" by im_livechat_ai and finish there."
-msgstr "已搬移 %(moved)s 筆等待中的工作；%(busy)s 段對話當時正由 im_livechat_ai 回覆，會由它回完。"
+" by im_livechat_ai: the AI contact answers their waiting messages once it is"
+" done."
+msgstr "已搬移 %(moved)s 筆等待中的工作；%(busy)s 段對話當時正由 im_livechat_ai 回覆：等它回完，AI 聯絡人再回覆其中還在等的訊息。"
 
 #. module: woow_ai_contact_livechat
 #. odoo-python
@@ -452,8 +453,9 @@ msgstr "已從 im_livechat_ai 切換"
 #: code:addons/woow_ai_contact_livechat/models/legacy_migration.py:0
 msgid ""
 "Switched on %(date)s (UTC) by %(user)s: AI %(state)s, %(moved)s job(s) "
-"moved, %(busy)s conversation(s) left to im_livechat_ai."
-msgstr "%(date)s（UTC）由 %(user)s 切換：AI %(state)s，搬移 %(moved)s 筆工作，%(busy)s 段對話留給 im_livechat_ai 回完。"
+"moved (%(busy)s conversation(s) answered by the AI contact once "
+"im_livechat_ai is done)."
+msgstr "%(date)s（UTC）由 %(user)s 切換：AI %(state)s，搬移 %(moved)s 筆工作（%(busy)s 段對話等 im_livechat_ai 回完後由 AI 聯絡人接著回覆）。"
 
 #. module: woow_ai_contact_livechat
 #. odoo-python
@@ -696,3 +698,11 @@ msgstr "開啟"
 #: code:addons/woow_ai_contact_livechat/models/legacy_migration.py:0
 msgid "yes"
 msgstr "是"
+
+#. module: woow_ai_contact_livechat
+#. odoo-python
+#: code:addons/woow_ai_contact_livechat/models/legacy_migration.py:0
+msgid ""
+"Found on %(date)s (UTC) with the AI contact \"%(name)s\" already set by hand: "
+"kept. im_livechat_ai answered this channel: %(answer)s."
+msgstr "%(date)s（UTC）發現已手動設定 AI 聯絡人「%(name)s」：保留。im_livechat_ai 原本回覆這個頻道：%(answer)s。"

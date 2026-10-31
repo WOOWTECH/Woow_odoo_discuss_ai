@@ -5,7 +5,9 @@ Runs only in a database where im_livechat_ai 18.0.1.1.0 is installed
 (sandbox db aicontact_lc_mig); skipped elsewhere. The 1.1.0 settings are
 written with SQL like the migration reads them."""
 
+import json
 from datetime import timedelta
+from unittest.mock import patch
 
 from odoo import fields
 from odoo.exceptions import UserError, ValidationError
@@ -19,7 +21,7 @@ from odoo.addons.woow_ai_contact_livechat.models.legacy_migration import (
     LEGACY_ICP_KEYS, LEGACY_LOCK_NAMESPACE, MIGRATED_TIMEOUT_SECONDS, PRODUCT_GUARD_NO_TOOLS,
 )
 
-from .common import LivechatCase
+from .common import BACKEND_POST, LivechatCase, openai_ok
 
 LEGACY_KEY = 'sk-legacy-placeholder'  # not a real key
 
@@ -213,26 +215,132 @@ class TestMigration(LivechatCase):
         self.assertFalse(self.chan_b.woow_ai_enabled)
         self.assertEqual(self.chan_b.woow_ai_migration_state, 'switched')
 
-    def test_switch_leaves_conversations_1_1_0_is_answering(self):
-        self.Migration._prepare()
-        session = self.new_session(visitor=self.visitor, livechat=self.chan_a)
-        self.post(session, self.visitor, '你好')
-        legacy_job = self.env['im_livechat.ai.job'].search([('discuss_channel_id', '=', session.id)])
+    def _hold_legacy_lock(self, session):
+        """im_livechat_ai is processing `session`: its session lock, held by another
+        connection (a real one: registry.cursor() shares the test connection)."""
         self.env.flush_all()
-        # im_livechat_ai is processing this conversation: its session lock, held by another
-        # connection (a real one: registry.cursor() shares the test connection)
         other = db_connect(self.env.cr.dbname).cursor()
-        try:
-            other.execute("SELECT pg_advisory_lock(%s, %s)", (LEGACY_LOCK_NAMESPACE, session.id))
-            result = self.Migration._switch(self.chan_a, price_regression_confirmed=True)
-        finally:
+        other.execute("SELECT pg_advisory_lock(%s, %s)", (LEGACY_LOCK_NAMESPACE, session.id))
+
+        def release():
             other.execute("SELECT pg_advisory_unlock(%s, %s)", (LEGACY_LOCK_NAMESPACE, session.id))
             other.rollback()
             other.close()
-        self.assertEqual(result, {'moved': 0, 'busy': 1})
-        self.assertFalse(self.jobs(session))
-        legacy_job.invalidate_recordset()
-        self.assertEqual(legacy_job.state, 'pending')  # 1.1.0 answers it once
+        return release
+
+    def _legacy_job(self, session, message):
+        return self.env['im_livechat.ai.job'].search([('discuss_channel_id', '=', session.id),
+                                                       ('message_id', '=', message.id)])
+
+    def test_switch_busy_conversation_answered_after_1_1_0(self):
+        """1.1.0 job J1 holds the session lock (waiting on its LLM) and Q2 queued J2:
+        after the switch J1 is skipped by 1.1.0 (a newer job exists) and J2 too
+        (AI off). The AI contact must answer Q1 + Q2 once 1.1.0 is done."""
+        self.Migration._prepare()
+        session = self.new_session(visitor=self.visitor, livechat=self.chan_a)
+        q1 = self.post(session, self.visitor, '第一個問題')
+        j1 = self._legacy_job(session, q1)
+        self.env.cr.execute("UPDATE im_livechat_ai_job SET state = 'running', attempts = 1 WHERE id = %s", (j1.id,))
+        q2 = self.post(session, self.visitor, '第二個問題')
+        j2 = self._legacy_job(session, q2)
+        release = self._hold_legacy_lock(session)
+        try:
+            result = self.Migration._switch(self.chan_a, price_regression_confirmed=True)
+            self.assertEqual(result, {'moved': 1, 'busy': 1})
+            moved = self.jobs(session)
+            self.assertEqual((len(moved), moved.message_id), (1, q2))
+            (j1 | j2).invalidate_recordset()
+            self.assertEqual((j1.state, j2.state), ('running', 'skipped'))  # J1 still belongs to 1.1.0
+            # while 1.1.0 holds its lock the AI contact waits (no backend call)
+            with patch(BACKEND_POST) as post:
+                self.run_job(moved)
+            post.assert_not_called()
+            self.assertEqual(moved.state, 'pending')
+            self.assertEqual(moved.run_count, 0)
+            self.assertGreater(moved.run_after, fields.Datetime.now())
+        finally:
+            release()
+        # 1.1.0 finishes its chain: J1 is not answered (AI off), J2 never runs again
+        self.env['im_livechat.ai.job'].browse(j1.id)._run_job(commit=False)
+        (j1 | j2).invalidate_recordset()
+        self.assertEqual((j1.state, j2.state), ('skipped', 'skipped'))
+        self.assertFalse(self.env['im_livechat.ai.job'].search([('discuss_channel_id', '=', session.id),
+                                                                ('reply_message_id', '!=', False)]))
+        # then the AI contact answers both questions
+        with patch(BACKEND_POST, return_value=openai_ok('兩題一起回答')) as post:
+            self.run_job(moved)
+        self.assertEqual(moved.state, 'done', moved.error)
+        self.assertIn('兩題一起回答', moved.reply_message_id.body)
+        texts = json.dumps(self.request_body(post)['messages'], ensure_ascii=False)
+        self.assertIn('第一個問題', texts)
+        self.assertIn('第二個問題', texts)
+
+    def test_switch_busy_conversation_already_answered_by_1_1_0(self):
+        # J1 had Q2 in its context and posted: the moved job does not answer Q2 again
+        self.Migration._prepare()
+        session = self.new_session(visitor=self.visitor, livechat=self.chan_a)
+        q1 = self.post(session, self.visitor, '問題一')
+        j1 = self._legacy_job(session, q1)
+        q2 = self.post(session, self.visitor, '問題二')
+        release = self._hold_legacy_lock(session)
+        try:
+            self.assertEqual(self.Migration._switch(self.chan_a, price_regression_confirmed=True)['busy'], 1)
+        finally:
+            release()
+        legacy_reply = self.post(session, self.bot_a, '舊 AI 一併回答兩題')
+        self.env.cr.execute("""UPDATE im_livechat_ai_job SET state = 'done', reply_message_id = %s,
+                               context_message_id = %s WHERE id = %s""", (legacy_reply.id, q2.id, j1.id))
+        moved = self.jobs(session).filtered(lambda j: j.message_id == q2)
+        with patch(BACKEND_POST) as post:
+            self.run_job(moved)
+        post.assert_not_called()
+        self.assertEqual(moved.state, 'done')
+        self.assertFalse(moved.reply_message_id)
+
+    def test_switch_moves_jobs_left_running_by_a_crash(self):
+        # lock free but state running: 1.1.0 crashed; its cron would skip it as "AI off"
+        self.Migration._prepare()
+        session = self.new_session(visitor=self.visitor, livechat=self.chan_a)
+        q1 = self.post(session, self.visitor, '還在嗎')
+        j1 = self._legacy_job(session, q1)
+        self.env.cr.execute("UPDATE im_livechat_ai_job SET state = 'running', attempts = 1 WHERE id = %s", (j1.id,))
+        result = self.Migration._switch(self.chan_a, price_regression_confirmed=True)
+        self.assertEqual(result, {'moved': 1, 'busy': 0})
+        j1.invalidate_recordset()
+        self.assertEqual(j1.state, 'skipped')
+        moved = self.jobs(session)
+        self.assertEqual(moved.message_id, q1)
+        with patch(BACKEND_POST, return_value=openai_ok('在的')):
+            self.run_job(moved)
+        self.assertEqual(moved.state, 'done', moved.error)
+
+    def test_switch_keeps_an_ai_a_manager_turned_on(self):
+        self.Migration._prepare()
+        self.assertFalse(self.chan_b.woow_ai_legacy_enabled)  # 1.1.0 was off there
+        self.chan_b.write({'woow_ai_enabled': True})  # allowed: 1.1.0 is off on this channel
+        self._switch(self.chan_b)
+        self.assertTrue(self.chan_b.woow_ai_enabled)
+        self.assertEqual(self.chan_b.woow_ai_migration_state, 'switched')
+
+    def test_prepare_adopts_channels_linked_by_hand(self):
+        # a Live Chat manager picked AI contacts before prepare could run
+        self.chan_b.write({'woow_ai_contact_id': self.contact.id, 'woow_ai_enabled': True})
+        self.chan_a.write({'woow_ai_contact_id': self.contact.id})  # 1.1.0 still on there: AI stays off
+        prepared = self.Migration._prepare()
+        self.assertEqual((prepared[self.chan_a.id], prepared[self.chan_b.id]), (self.contact.id, self.contact.id))
+        self.assertEqual((self.chan_b.woow_ai_contact_id, self.chan_b.woow_ai_enabled), (self.contact, True))
+        self.assertEqual(self.chan_b.woow_ai_migration_state, 'switched')  # nothing left to switch
+        self.assertEqual(self.chan_a.woow_ai_migration_state, 'staged')
+        self.assertTrue(self.chan_a.woow_ai_legacy_enabled)
+        self.assertEqual(self.chan_a.woow_ai_legacy_bot_partner_id, self.bot_a)
+        self.assertIn('by hand', self.chan_b.woow_ai_migration_note)
+        self.assertEqual(self.Migration._prepare(), {})  # idempotent
+        # Finish is not blocked by the adopted channels
+        self._switch(self.chan_a)
+        self._switch(self.chan_c)
+        self.env.cr.execute("UPDATE im_livechat_ai_job SET state = 'skipped' WHERE state IN ('pending', 'running')")
+        self.assertGreaterEqual(self.Migration._finish()['channels'], 3)
+        self.assertEqual(self.chan_b.woow_ai_migration_state, 'finalized')
 
     def test_switch_back(self):
         self.Migration._prepare()

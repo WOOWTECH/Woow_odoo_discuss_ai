@@ -29,7 +29,8 @@ class WoowAiLivechatSwitchWizard(models.TransientModel):
             'params': {
                 'title': self.env._('Switched from im_livechat_ai'),
                 'message': self.env._('%(moved)s waiting job(s) moved; %(busy)s conversation(s) were being answered '
-                                      'by im_livechat_ai and finish there.', moved=result['moved'], busy=result['busy']),
+                                      'by im_livechat_ai: the AI contact answers their waiting messages once it is '
+                                      'done.', moved=result['moved'], busy=result['busy']),
                 'type': 'success',
                 'sticky': False,
                 'next': {'type': 'ir.actions.act_window_close'},

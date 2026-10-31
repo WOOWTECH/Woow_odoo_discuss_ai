@@ -179,9 +179,16 @@ class WoowAiLivechatMigration(models.AbstractModel):
         Channel = self.env['im_livechat.channel'].sudo().with_context(active_test=False)
 
         groups = {}
-        for row in self._legacy_rows():
-            groups.setdefault(self._group_key(row), []).append(row)
         prepared = {}
+        for row in self._legacy_rows():
+            channel = Channel.browse(row['id'])
+            if channel.woow_ai_contact_id:
+                if channel.woow_ai_migration_state == 'none':
+                    # a Live Chat manager picked an AI contact before prepare could run
+                    channel.with_context(woow_ai_migration=True).write(self._adopt_vals(row, channel))
+                    prepared[channel.id] = channel.woow_ai_contact_id.id
+                continue
+            groups.setdefault(self._group_key(row), []).append(row)
         for key, rows in groups.items():
             channels = Channel.browse([row['id'] for row in rows])
             todo = [row for row in rows if not Channel.browse(row['id']).woow_ai_contact_id]
@@ -200,6 +207,24 @@ class WoowAiLivechatMigration(models.AbstractModel):
                 "woow_ai_contact_livechat: prepared %s im_livechat_ai channel(s) %s (AI off; im_livechat_ai keeps "
                 "answering until each channel is switched)", len(prepared), sorted(prepared))
         return prepared
+
+    @api.model
+    def _adopt_vals(self, row, channel):
+        """Migration state of a 1.1.0 channel whose AI contact was set by hand
+        (its contact and handoff settings are kept): staged while 1.1.0 still
+        answers it, switched when 1.1.0 is off there (nothing left to switch)."""
+        legacy_on = bool(row['ai_enabled'])
+        note = self.env._('Found on %(date)s (UTC) with the AI contact "%(name)s" already set by hand: kept. '
+                          'im_livechat_ai answered this channel: %(answer)s.',
+                          date=fields.Datetime.to_string(fields.Datetime.now()),
+                          name=channel.woow_ai_contact_id.name,
+                          answer=self.env._('yes') if legacy_on else self.env._('no'))
+        return {
+            'woow_ai_legacy_bot_partner_id': row['ai_bot_partner_id'] or False,
+            'woow_ai_legacy_enabled': legacy_on,
+            'woow_ai_migration_state': 'staged' if legacy_on else 'switched',
+            'woow_ai_migration_note': '\n'.join(filter(None, [channel.woow_ai_migration_note, note])),
+        }
 
     @api.model
     def _create_contact(self, row, key, base_url, api_key):
@@ -285,7 +310,8 @@ class WoowAiLivechatMigration(models.AbstractModel):
         """Hand one channel from im_livechat_ai to its AI contact (one transaction).
 
         Returns:
-            dict: moved (jobs moved), busy (conversations left to 1.1.0 because it was answering them)
+            dict: moved (jobs moved), busy (conversations 1.1.0 was answering: their waiting
+                messages are moved too and answered once 1.1.0 is done, see _move_legacy_jobs)
         """
         channel = channel.sudo()
         channel.ensure_one()
@@ -305,7 +331,8 @@ class WoowAiLivechatMigration(models.AbstractModel):
             cr.execute("UPDATE im_livechat_channel SET ai_enabled = FALSE WHERE id = %s", (channel.id,))
             self.env['im_livechat.channel'].invalidate_model()
         channel.with_context(woow_ai_migration=True).write({
-            'woow_ai_enabled': channel.woow_ai_legacy_enabled,
+            # on when 1.1.0 answered, and kept on when a Live Chat manager already turned it on
+            'woow_ai_enabled': bool(channel.woow_ai_enabled or channel.woow_ai_legacy_enabled),
             'woow_ai_migration_state': 'switched',
         })
         self.env.flush_all()
@@ -316,8 +343,8 @@ class WoowAiLivechatMigration(models.AbstractModel):
                  WHERE livechat_channel_id = %s AND ai_paused_until > (now() AT TIME ZONE 'UTC')""", (channel.id,))
             self.env['discuss.channel'].invalidate_model(['woow_ai_paused_until'])
         moved, busy = self._move_legacy_jobs(channel, contact)
-        note = self.env._('Switched on %(date)s (UTC) by %(user)s: AI %(state)s, %(moved)s job(s) moved, '
-                          '%(busy)s conversation(s) left to im_livechat_ai.',
+        note = self.env._('Switched on %(date)s (UTC) by %(user)s: AI %(state)s, %(moved)s job(s) moved '
+                          '(%(busy)s conversation(s) answered by the AI contact once im_livechat_ai is done).',
                           date=fields.Datetime.to_string(fields.Datetime.now()), user=self.env.user.name,
                           state=self.env._('on') if channel.woow_ai_enabled else self.env._('off'),
                           moved=moved, busy=busy)
@@ -329,18 +356,34 @@ class WoowAiLivechatMigration(models.AbstractModel):
 
     @api.model
     def _move_legacy_jobs(self, channel, contact):
-        """Move 1.1.0 jobs that never ran (pending, 0 attempts, < 30 minutes)."""
+        """Move the unfinished 1.1.0 jobs of the channel (< 30 minutes old).
+
+        Once the channel is switched, 1.1.0 skips every job it has not
+        answered yet (its ``_skip_reply`` checks ``ai_enabled`` first), so all
+        of them become woow.ai.job: pending ones, and running ones left by a
+        crash (their session lock is free). A conversation 1.1.0 is answering
+        right now (its session lock is held) cannot be taken over: its running
+        job is left alone, but it will be skipped anyway when a newer 1.1.0
+        job exists (``_has_newer_job`` counts every state), so the waiting
+        jobs are moved too and the AI contact answers them after 1.1.0 is
+        done (woow.ai.job waits while the 1.1.0 lock is held and does not
+        repeat what a 1.1.0 reply already covered, see the bridge's
+        woow.ai.job).
+
+        Returns:
+            tuple: (jobs moved, conversations 1.1.0 was answering)
+        """
         cr = self.env.cr
         if not sql.table_exists(cr, 'im_livechat_ai_job'):
             return 0, 0
         cr.execute("""
-            SELECT id, discuss_channel_id, kind, message_id FROM im_livechat_ai_job
-             WHERE livechat_channel_id = %s AND state = 'pending' AND COALESCE(attempts, 0) = 0
+            SELECT id, discuss_channel_id, kind, message_id, state FROM im_livechat_ai_job
+             WHERE livechat_channel_id = %s AND state IN ('pending', 'running')
                AND create_date > (now() AT TIME ZONE 'UTC') - interval '%s minutes'
           ORDER BY id""", (channel.id, LEGACY_JOB_MAX_AGE_MINUTES))
         by_session = {}
-        for job_id, session_id, kind, message_id in cr.fetchall():
-            by_session.setdefault(session_id, []).append((job_id, kind, message_id))
+        for job_id, session_id, kind, message_id, state in cr.fetchall():
+            by_session.setdefault(session_id, []).append((job_id, kind, message_id, state))
         Session = self.env['discuss.channel'].sudo()
         Message = self.env['mail.message'].sudo()
         Job = self.env['woow.ai.job'].sudo()
@@ -349,10 +392,12 @@ class WoowAiLivechatMigration(models.AbstractModel):
             # transaction lock: excludes 1.1.0's session lock (same key) until commit
             cr.execute("SELECT pg_try_advisory_xact_lock(%s, %s)", (LEGACY_LOCK_NAMESPACE, session_id))
             if not cr.fetchone()[0]:
-                busy += 1  # 1.1.0 is answering this conversation: it posts once, nothing to move
-                continue
+                busy += 1  # 1.1.0 is answering: its running job finishes there
+                jobs = [job for job in jobs if job[3] == 'pending']
+                if not jobs:
+                    continue
             session = Session.browse(session_id).exists()
-            for _job_id, kind, message_id in jobs:
+            for _job_id, kind, message_id, _state in jobs:
                 message = Message.browse(message_id).exists() if message_id else Message
                 if session and message:
                     Job._create_for_message(session, contact, message,

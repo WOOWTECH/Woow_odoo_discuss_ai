@@ -20,7 +20,8 @@ msgstr ""
 #: code:addons/woow_ai_contact_livechat/wizard/switch_wizard.py:0
 msgid ""
 "%(moved)s waiting job(s) moved; %(busy)s conversation(s) were being answered"
-" by im_livechat_ai and finish there."
+" by im_livechat_ai: the AI contact answers their waiting messages once it is"
+" done."
 msgstr ""
 
 #. module: woow_ai_contact_livechat
@@ -451,7 +452,8 @@ msgstr ""
 #: code:addons/woow_ai_contact_livechat/models/legacy_migration.py:0
 msgid ""
 "Switched on %(date)s (UTC) by %(user)s: AI %(state)s, %(moved)s job(s) "
-"moved, %(busy)s conversation(s) left to im_livechat_ai."
+"moved (%(busy)s conversation(s) answered by the AI contact once "
+"im_livechat_ai is done)."
 msgstr ""
 
 #. module: woow_ai_contact_livechat
@@ -694,4 +696,12 @@ msgstr ""
 #. odoo-python
 #: code:addons/woow_ai_contact_livechat/models/legacy_migration.py:0
 msgid "yes"
+msgstr ""
+
+#. module: woow_ai_contact_livechat
+#. odoo-python
+#: code:addons/woow_ai_contact_livechat/models/legacy_migration.py:0
+msgid ""
+"Found on %(date)s (UTC) with the AI contact \"%(name)s\" already set by hand: "
+"kept. im_livechat_ai answered this channel: %(answer)s."
 msgstr ""
