@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import requests
 
+from odoo.addons.base.controllers.rpc import dumps as xmlrpc_dumps
 from odoo.exceptions import AccessError, ValidationError
 from odoo.tests.common import new_test_user, tagged
 
@@ -194,6 +195,37 @@ class TestAiContact(AiContactCase):
         self.assertFalse(self.env['woow.ai.contact']._find_by_push_key(new_key))
         with self.assertRaises(AccessError):
             self.contact.with_user(self.internal).action_generate_push_key()
+
+    def test_public_actions_xmlrpc_marshallable(self):
+        """Regression: action_revoke_push_key returned None and XML-RPC callers
+        got Fault 'cannot marshal None' although the action had committed.
+        Every public action_* method must return a value Odoo's XML-RPC
+        marshaller accepts (no None anywhere in the result)."""
+        Contact = type(self.env['woow.ai.contact'])
+        # the methods this module defines (core action_archive/unarchive return
+        # None in Odoo 18 itself and are out of scope)
+        names = sorted(name for name in dir(Contact)
+                       if name.startswith('action_') and callable(getattr(Contact, name))
+                       and getattr(Contact, name).__module__.startswith('odoo.addons.woow_ai_contact.'))
+        # guard against the introspection silently selecting nothing
+        self.assertTrue({'action_revoke_push_key', 'action_clear_api_key', 'action_generate_push_key',
+                         'action_test_connection', 'action_view_call_logs',
+                         'action_open_bot_partner'} <= set(names), names)
+        for name in names:
+            contact = self.contact.copy()
+            contact.write({'api_key': TEST_KEY, 'endpoint_url': self.contact.endpoint_url})
+            with self.subTest(action=name), \
+                    patch(BACKEND_GET, return_value=http_response(200)), \
+                    patch(BACKEND_POST, return_value=http_response(200)):
+                result = getattr(contact, name)()
+                self.assertIsNotNone(result)
+                xmlrpc_dumps((result,))  # raises TypeError on None
+        # the two former offenders, explicitly
+        self.contact.action_generate_push_key()
+        self.assertIs(self.contact.action_revoke_push_key(), True)
+        self.assertFalse(self.contact.push_key_hash)
+        self.assertIs(self.contact.action_clear_api_key(), True)
+        self.assertFalse(self.contact._get_api_key())
 
     def test_copy_gets_own_partner(self):
         copy = self.contact.copy()

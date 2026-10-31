@@ -189,10 +189,13 @@ class WoowAiContact(models.Model):
         return self._get_api_keys().get(self.id) or ''
 
     def action_clear_api_key(self):
+        # Public action_* methods are reachable over XML-RPC/JSON-RPC: return
+        # True, never None (XML-RPC cannot marshal None).
         self._check_admin()
         for contact in self:
             contact._set_api_key(False)
         self.invalidate_recordset(['api_key_set'])
+        return True
 
     def _check_admin(self):
         if not self.env.su and not self.env.user.has_group('base.group_system'):
@@ -315,6 +318,8 @@ class WoowAiContact(models.Model):
     def action_revoke_push_key(self):
         self._check_admin()
         self.sudo().write({'push_key_hash': False, 'push_key_hint': False})
+        _logger.info("AI contact(s) %s: push key revoked by user %s", self.ids, self.env.uid)
+        return True
 
     @api.model
     def _find_by_push_key(self, key):
