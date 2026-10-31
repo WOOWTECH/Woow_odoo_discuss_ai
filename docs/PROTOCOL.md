@@ -101,6 +101,26 @@ tool chains can take minutes. Therefore:
   n8n in-cluster (`http://<service>.<namespace>.svc.cluster.local:5678/webhook/…`)
   when a NetworkPolicy allows it.
 
+### Using Hermes as a backend (checked against a live Hermes, 2026-10-31)
+
+- The Hermes API server listens on port 8642 and wants
+  `Authorization: Bearer <API_SERVER_KEY>`; `GET /v1/models` lists one model,
+  `hermes-agent`. Streaming, history in the body, `image_url` data URIs and
+  markdown tables all worked with this module unchanged.
+- A Hermes deployed behind a dashboard login proxy (as on the WoowTech PaaS)
+  redirects every path, `/v1` included, to `/login`, even with a valid Bearer
+  key. Odoo cannot use the public hostname until the proxy lets `/v1` through
+  with Bearer auth; until then reach port 8642 in-cluster (allowed by a
+  NetworkPolicy).
+- Every request carries Hermes' own system prompt and tool list (about 7,000
+  prompt tokens).
+- **Tools.** API conversations get the tools loaded in that Hermes (MCP servers
+  included, with their write operations). Anyone who can chat with the AI
+  contact can ask for them. Point AI contacts, above all those open to portal
+  users or Live Chat visitors, at a Hermes (or profile) that loads only the
+  read-only tools it needs, never at a staff Hermes with write access to
+  company systems.
+
 ## `openai` backend
 
 Request (`POST {endpoint_url}/chat/completions`):
