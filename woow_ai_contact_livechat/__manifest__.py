@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'AI Contacts for Live Chat',
-    'version': '18.0.1.0.0',
+    'version': '18.0.1.1.0',
     'category': 'Website/Live Chat',
     'summary': 'Let an AI contact answer Live Chat visitors, with human handoff and pause',
     'description': """
@@ -18,8 +18,10 @@ Installed automatically when both are installed.
   AI and alert the operators (OdooBot message and sticky notification)
 * A visitor who writes while nobody answers gets one notice; operators resume
   the AI at once with the "/ai on" command or the session's button
-* Operator replies are sent to the backend as colleague replies
-  ("[真人客服 name]"); links in AI replies stay clickable only for the
+* Operator replies are sent to the backend as labelled colleague replies
+  ("[真人客服 name]", never as the AI's words); handoff / paused notices,
+  pauses and resumes are given to the model as conversation events (facts),
+  not as its own messages; links in AI replies stay clickable only for the
   website's own domains
 * Coexists with im_livechat_ai 1.1.0 (a conversation is never answered twice)
   and migrates its channels in stages: prepare on install, switch per channel,

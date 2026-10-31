@@ -93,10 +93,12 @@ class WoowAiJob(models.Model):
         livechat_channel = channel.livechat_channel_id
         text = (livechat_channel.woow_ai_handoff_message or '').strip() or DEFAULT_HANDOFF_MESSAGE
         message = contact._post_text(channel, text)
+        minutes = livechat_channel._woow_ai_pause_minutes_value()
+        # the notice is a conversation event (a fact for the model), not the AI's words
+        channel._woow_ai_log_event('handoff', message=message, trigger=self.message_id, minutes=minutes)
         self._finish('done', False, reply_message=message or None)
         self._supersede_older()
         commit_step()
-        minutes = livechat_channel._woow_ai_pause_minutes_value()
         channel._woow_ai_alert_operators('handoff', lambda ch, tz: ch.env._(
             'The visitor in "%(name)s" asks for a human. The AI is paused for %(minutes)s minutes: please '
             'take over. Type /ai on in the conversation to resume the AI now.',

@@ -6,7 +6,8 @@ Other channel kinds plug in by overriding the ``_woow_ai_*`` hooks (the Live
 Chat bridge overrides ``_woow_ai_channel_contact``, ``_woow_ai_author_role``,
 ``_woow_ai_message_kind``, ``_woow_ai_is_paused``, ``_woow_ai_requester``,
 ``_woow_ai_identity``, ``_woow_ai_system_prompt``, ``_woow_ai_link_hosts``,
-``_woow_ai_channel_info`` and ``_woow_ai_check_author``).
+``_woow_ai_channel_info``, ``_woow_ai_check_author`` and
+``_woow_ai_conversation_events``).
 """
 
 import html as html_lib
@@ -102,6 +103,21 @@ class DiscussChannel(models.Model):
     def _woow_ai_system_prompt(self, contact, history):
         """System prompt sent to the backend ('' = none: the backend decides)."""
         return (contact.sudo().system_prompt or '').strip()
+
+    def _woow_ai_conversation_events(self, contact, history):
+        """Facts about the conversation the model must know but did not say
+        itself (docs/PROTOCOL.md "Conversation events"): a bridge returns e.g.
+        "handed over to a human, the operators were alerted" or "the AI was
+        resumed". Messages that only announce such an event (a notice posted as
+        the AI) should then be dropped from the history by
+        ``_woow_ai_author_role``, so the model does not take them for its own
+        words. Core: none.
+
+        Returns:
+            list of dict: ``date`` (UTC datetime), ``kind`` (short code),
+            ``text`` (one sentence for the model), oldest first
+        """
+        return []
 
     def _woow_ai_link_hosts(self, contact):
         """Hosts whose links in AI replies stay clickable, or None (any http(s)

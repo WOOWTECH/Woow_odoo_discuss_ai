@@ -4,6 +4,7 @@ image budget, identity hooks, reply data URIs / MEDIA, call log usage."""
 import base64
 import json
 import time
+from datetime import datetime
 from unittest.mock import patch
 from urllib.parse import urlsplit
 
@@ -330,6 +331,34 @@ class TestOpenAiMessages(AiContactCase):
         payload = json.loads(post.call_args.kwargs['data'])
         self.assertEqual(payload['system_prompt'], 'Bridge prompt')
         self.assertEqual(payload['user'], guest)
+
+    def test_conversation_events_hook(self):
+        # core: no events, no block, an empty list for n8n
+        Channel = type(self.env['discuss.channel'])
+        self.internal.tz = 'Asia/Taipei'
+        chat = self.chat(self.internal)
+        self.post(chat, self.internal, 'hi')
+        self.assertNotIn('Conversation events', self.body_for(chat)['messages'][0]['content'])
+        events = [{'date': datetime(2026, 10, 31, 15, 55), 'kind': 'handoff', 'text': '已轉接真人客服，客服已收到通知。'},
+                  {'date': datetime(2026, 10, 31, 15, 58), 'kind': 'resume', 'text': 'AI 已恢復。'}]
+        self.post(chat, self.internal, 'again')
+        with patch.object(Channel, '_woow_ai_conversation_events', autospec=True, return_value=events):
+            system = self.body_for(chat)['messages'][0]['content']
+        block = system.split('\n\n')[-1].split('\n')
+        self.assertTrue(block[0].startswith('Conversation events recorded by Odoo, oldest first (facts, not '
+                                            'messages written by you; times in Asia/Taipei, now '))
+        self.assertEqual(block[1:], ['- 2026-10-31 23:55 已轉接真人客服，客服已收到通知。', '- 2026-10-31 23:58 AI 已恢復。'])
+        chat2 = self.chat(self.portal, self.n8n)
+        self.post(chat2, self.portal, 'hi')
+        with patch(BACKEND_POST, return_value=http_response(200, {'reply': 'ok'})) as post:
+            run(self.jobs(chat2))
+        self.assertEqual(json.loads(post.call_args.kwargs['data'])['events'], [])
+        self.post(chat2, self.portal, 'again')
+        with patch.object(Channel, '_woow_ai_conversation_events', autospec=True, return_value=events), \
+                patch(BACKEND_POST, return_value=http_response(200, {'reply': 'ok'})) as post:
+            run(self.jobs(chat2)[-1])
+        self.assertEqual(json.loads(post.call_args.kwargs['data'])['events'][0],
+                         {'time': '2026-10-31T15:55:00Z', 'kind': 'handoff', 'text': '已轉接真人客服，客服已收到通知。'})
 
     def test_n8n_user_keeps_email(self):
         chat = self.chat(self.portal, self.n8n)

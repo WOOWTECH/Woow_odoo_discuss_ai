@@ -1,2 +1,4 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
 access_woow_ai_livechat_switch_wizard_system,woow.ai.livechat.switch.wizard.system,model_woow_ai_livechat_switch_wizard,base.group_system,1,1,1,1
+access_woow_ai_livechat_event_system,woow.ai.livechat.event.system,model_woow_ai_livechat_event,base.group_system,1,1,1,1
+access_woow_ai_livechat_event_manager,woow.ai.livechat.event.manager,model_woow_ai_livechat_event,im_livechat.im_livechat_group_manager,1,0,0,0

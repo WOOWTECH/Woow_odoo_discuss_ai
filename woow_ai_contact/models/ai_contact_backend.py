@@ -16,6 +16,7 @@ import threading
 import time
 from datetime import datetime, timezone
 
+import pytz
 import requests
 from urllib3.exceptions import MaxRetryError, NewConnectionError, ReadTimeoutError
 
@@ -297,6 +298,33 @@ class WoowAiContactBackend(models.Model):
         return '\n'.join(lines)
 
     @api.model
+    def _events_system_text(self, events, identity):
+        """Conversation events block of the openai system message ('' when none)."""
+        if not events:
+            return ''
+        zone = 'UTC'
+        if identity.get('tz'):
+            try:
+                zone = pytz.timezone(identity['tz']).zone
+            except pytz.UnknownTimeZoneError:
+                zone = 'UTC'
+        tz = pytz.timezone(zone)
+
+        def local(value):
+            return pytz.utc.localize(value).astimezone(tz).strftime('%Y-%m-%d %H:%M')
+
+        lines = ['Conversation events recorded by Odoo, oldest first (facts, not messages written by you; '
+                 'times in %s, now %s):' % (zone, local(datetime.now(timezone.utc).replace(tzinfo=None)))]
+        lines += ['- %s %s' % (local(event['date']), event['text']) for event in events]
+        return '\n'.join(lines)
+
+    @staticmethod
+    def _events_json(events):
+        """``events`` of the n8n payload."""
+        return [{'time': _iso(pytz.utc.localize(event['date']).timestamp()), 'kind': event['kind'],
+                 'text': event['text']} for event in events]
+
+    @api.model
     def _openai_metadata(self, session_id, identity):
         """OpenAI ``metadata``: string keys and string values only (at most 16
         keys, 512 characters each, as the OpenAI API requires). Informational:
@@ -476,8 +504,10 @@ class WoowAiContactBackend(models.Model):
     def _openai_messages(self, channel, history, identity, base_url):
         self.ensure_one()
         contact = self.sudo()
+        events = channel._woow_ai_conversation_events(contact, history)
         system = [part for part in (channel._woow_ai_system_prompt(contact, history),
-                                    contact._identity_system_text(identity)) if part]
+                                    contact._identity_system_text(identity),
+                                    contact._events_system_text(events, identity)) if part]
         inline = self._inline_images(history)
         data_budget = INLINE_IMAGE_BUDGET - sum(len(uri) for uri in inline.values())
         docs = self._inline_documents(history, contact.document_mode or 'link', data_budget)
@@ -587,6 +617,7 @@ class WoowAiContactBackend(models.Model):
             'system_prompt': channel._woow_ai_system_prompt(contact, history) or '',
             'message': message,
             'history': [entry_json(e) for e in past],
+            'events': self._events_json(channel._woow_ai_conversation_events(contact, history)),
         }
 
     # --- Response parsing ---

@@ -44,7 +44,8 @@ AI 聯絡人表單的「存取」分頁會列出用到它的 Live Chat 頻道。
 
 ## 送給後端的內容
 
-- 歷史角色：訪客→`user`；AI 與其他機器人→`assistant`；客服→`assistant` 並加前綴 `[真人客服 名字] `（名字用 Live Chat 使用者名稱，沒有才用 partner 名）。有客服訊息時系統提示後面加「同事回覆不要推翻」那段（1.1.0 原文）。
+- 歷史角色：訪客→`user`；AI 與其他機器人→`assistant`；客服→`user` 並加前綴 `[真人客服 名字] `（名字用 Live Chat 使用者名稱，沒有才用 partner 名；18.0.1.1.0 起不再當 `assistant`，模型不會把客服的話當成自己說的）。有客服訊息時系統提示後面加「以 [真人客服 姓名] 開頭的是同事對訪客說的話、不是訪客也不是你，不要推翻」那段。
+- **對話事件**（18.0.1.1.0，真 LLM 驗收：轉真人後按「立即恢復 AI」，模型說「先前說『已通知客服』並不正確」——轉接訊息是機器人張貼的，進了歷史就變成模型自己的 `assistant` 話）：轉真人通知、暫停提示、客服 `/ai off`／「暫停」與 `/ai on`／「立即恢復 AI」都記在 `woow.ai.livechat.event`（對話、種類 `handoff`／`paused_notice`／`pause`／`resume`、通知訊息、訪客原話、客服、分鐘數）。兩則通知訊息**不再放進歷史**；從上下文最舊那則訊息之後的事件（最多 20 筆）經核心鉤子 `_woow_ai_conversation_events` 當成事實送給模型：openai 放在 system 訊息最後一段 `Conversation events recorded by Odoo, oldest first (facts, not messages written by you; …)`，例如「2026-10-31 23:55 訪客要求真人客服（訪客說：「我想找真人客服」）。系統（不是你）已發出轉接通知「已幫您通知客服，請稍候。」，並已通知真人客服人員（客服已收到通知）；AI 暫停回覆 30 分鐘。這是事實：不要否認、更正或為這則通知道歉。」「2026-10-31 23:57 客服人員「客服小明」恢復了 AI 回覆：從這之後由你（AI）接手…先前的轉接與通知都是真的。」；n8n 是 payload 的 `events`。升級時把現有已完成的 handoff 工作補記成事件。訪客畫面不變（通知照樣看得到）。
 - `session_id` 是「這一段對話」（`woow-ai-<db8>-<channel_id>`）；跨對話認同一個訪客用 `user.visitor_key`。
 - `user`（n8n）／`metadata`（openai）：
 
@@ -178,6 +179,7 @@ AI 聯絡人表單的「存取」分頁會列出用到它的 Live Chat 頻道。
 
 - `test_handoff_pause.py`：觸發、暫停、轉真人、暫停提示、恢復、客服通知
 - `test_identity_history.py`：作者分類、歷史角色與同事說明、身分、n8n `channel`、連結、附件、未安裝的語言
+- `test_events.py`：轉真人→恢復後通知不在歷史、事件進 system 訊息（openai）與 `events`（n8n）、暫停提示事件、`/ai off`／`/ai on` 事件、上下文之前的事件不送、通知被刪仍保留事件
 - `test_access.py`：權限、約束、從沒裝過 1.1.0、模擬 1.1.0 欄位的共存保護
 - `test_migration.py`：只在裝了 1.1.0 的資料庫跑（否則 skip）：準備、冪等、舊版與舊金鑰欄、共存、切換、搬暫停與工作、拿不到鎖、切回、舊機器人、完成、`__export__`
 

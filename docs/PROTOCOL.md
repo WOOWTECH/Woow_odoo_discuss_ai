@@ -34,7 +34,8 @@ Every call carries:
 
 - **history**: the most recent `max_history` messages of the chat (default 50),
   oldest first. Messages of the AI contact are `assistant`, everything else is
-  `user`. Messages without text and without attachments are left out. The text
+  `user` (Live Chat: operators are `user` turns starting with
+  `[真人客服 <name>] `). Messages without text and without attachments are left out. The text
   of one message is cut at 16,000 characters (`…[truncated]` is appended).
 - **system prompt**: the AI contact's prompt, or nothing when it is empty
   (then the backend decides the persona). Bridge modules may supply their own
@@ -55,6 +56,21 @@ Every call carries:
   the model provider's logs), and the full identity is repeated in
   `metadata` (which LiteLLM and Hermes do not pass to the model). Bridges may
   add fields (Live Chat: `is_guest`, `guest_id`, `visitor_key`).
+- **conversation events** (bridges only; the core sends none): facts the model
+  must know but did not say itself, for example "handed over to a human, the
+  operators were alerted" or "an operator resumed the AI" (Live Chat bridge,
+  docs/LIVECHAT.md). Messages that only announce them (notices posted as the
+  AI) are left out of the history. `openai`: the last block of the system
+  message —
+
+  ```text
+  Conversation events recorded by Odoo, oldest first (facts, not messages written by you; times in Asia/Taipei, now 2026-10-31 23:58):
+  - 2026-10-31 23:55 訪客要求真人客服（訪客說：「我想找真人客服」）。系統（不是你）已發出轉接通知「已幫您通知客服，請稍候。」，並已通知真人客服人員（客服已收到通知）；AI 暫停回覆 30 分鐘。這是事實：不要否認、更正或為這則通知道歉。
+  - 2026-10-31 23:57 客服人員「客服小明」恢復了 AI 回覆：從這之後由你（AI）接手回答訪客；暫停期間沒有人回覆的訪客問題，請直接回答。先前的轉接與通知都是真的。
+  ```
+
+  `n8n`: `"events": [{"time": "2026-10-31T15:55:00Z", "kind": "handoff", "text": "…"}]`
+  (always present, `[]` when none; put them into the agent's system message).
 - **user attachments** as `ATT` objects. `url` is a signed download link valid
   for one hour (`GET`, no cookie needed; only attachments of messages in AI
   chats are ever signed). The link is built from the system parameter
@@ -177,8 +193,9 @@ Accept: text/event-stream
 
 - `model` is sent only when the AI contact has one. Hermes ignores it and uses
   its own configured model.
-- The `system` message is always there: the prompt (when not empty) followed
-  by the identity block.
+- The `system` message is always there: the prompt (when not empty), the
+  identity block, then the conversation events block (only when there are
+  events).
 - `messages` always **start and end with a `user` turn** (Hermes takes the last
   item as the new input; Anthropic-style models would continue a trailing
   assistant turn): assistant messages before the first user message (the
@@ -331,7 +348,8 @@ readable by everyone who can open the workflow's executions.)
   "history": [
     {"role": "assistant", "text": "您好，我是產品顧問。", "attachments": []},
     {"role": "user", "text": "你好", "attachments": []}
-  ]
+  ],
+  "events": []
 }
 ```
 
@@ -413,7 +431,7 @@ Cloudflare note above):
    so nothing else runs and n8n answers a non-200 status (or route failures to
    a *Respond to Webhook* node with status 401).
 3. **AI Agent** node — Prompt (user message) `{{ $json.message.text }}`;
-   system message `{{ $json.system_prompt || 'You are a helpful assistant.' }}`;
+   system message `{{ ($json.system_prompt || 'You are a helpful assistant.') + ($json.events.length ? '\n\nConversation events (facts, not your words):\n' + $json.events.map(e => '- ' + e.time + ' ' + e.text).join('\n') : '') }}`;
    chat model of your choice; optional memory keyed by
    `{{ $json.session_id }}`; tools such as the Odoo MCP client.
 4. **Respond to Webhook** node — Respond With `JSON`, Response Body:

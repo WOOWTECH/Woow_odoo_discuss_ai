@@ -12,7 +12,12 @@ what the L1 field test measured:
   last PAUSE_NOTICE_QUIET_MINUTES gets one notice per pause and the
   operators are alerted again (1.1.0 stayed silent for up to 30 minutes);
 * operators resume (or pause) the AI at once: ``/ai on`` / ``/ai off`` in the
-  conversation, or the button of the session form (1.1.0 had no way).
+  conversation, or the button of the session form (1.1.0 had no way);
+* the handoff and paused notices, pauses and resumes are conversation events
+  (``woow.ai.livechat.event``): the notices are left out of the history and
+  the model gets the events as facts in the system message, so it never
+  takes "已幫您通知客服" for its own words and denies it (real-LLM acceptance);
+  operator messages are sent as labelled user turns, never as the AI's.
 
 Visitors: guests, authors without partner, portal / public users and
 partners without user; an employee who is the conversation's visitor member
@@ -40,12 +45,14 @@ AUTHOR_VISITOR = 'visitor'
 AUTHOR_OPERATOR = 'operator'
 AUTHOR_BOT = 'bot'
 
-# History prefix of an operator's message, and the note added to the system prompt (1.1.0 wording).
+# History prefix of an operator's message (a user turn), and the note added to the system prompt.
 OPERATOR_PREFIX = '[真人客服 %s] '
 OPERATOR_SYSTEM_NOTE = (
-    '對話中以「[真人客服 姓名]」開頭的 assistant 訊息是真人客服同事的回覆，'
-    '不是你說的；不要推翻、否認或更改同事的說法與承諾，必要時請訪客等候同事處理。'
+    '對話中以「[真人客服 姓名]」開頭的訊息是真人客服同事對訪客說的話：不是訪客說的，也不是你（AI）說的。'
+    '不要推翻、否認或更改同事的說法與承諾，必要時請訪客等候同事處理。'
 )
+EVENT_QUOTE_CHARS = 120  # characters of a quoted message in an event
+EVENT_MAX = 20  # most recent events given to the model
 # No paused notice while an operator wrote less than this many minutes ago (they are chatting).
 PAUSE_NOTICE_QUIET_MINUTES = 5
 
@@ -161,7 +168,10 @@ class DiscussChannel(models.Model):
         if kind == AUTHOR_VISITOR:
             return 'user', ''
         if kind == AUTHOR_OPERATOR:
-            return 'assistant', OPERATOR_PREFIX % self._woow_ai_operator_name(message.author_id)
+            # a person, not the AI: a user turn with the operator's label (OPERATOR_SYSTEM_NOTE)
+            return 'user', OPERATOR_PREFIX % self._woow_ai_operator_name(message.author_id)
+        if message.id in self._woow_ai_notice_message_ids():
+            return None  # a handoff / paused notice: a conversation event, not the AI's words
         return 'assistant', ''
 
     def _woow_ai_history(self, contact, messages):
@@ -171,6 +181,7 @@ class DiscussChannel(models.Model):
         cached = self.with_context(woow_ai_lc_cache={
             'bots': self._woow_ai_bot_partner_ids(),
             'visitor': self._woow_ai_visitor_member().partner_id.id,
+            'notices': self._woow_ai_notice_message_ids(),
         })
         history = super(DiscussChannel, cached)._woow_ai_history(contact, messages)
         operator_ids = {
@@ -186,6 +197,73 @@ class DiscussChannel(models.Model):
         if self.channel_type != 'livechat' or not any(e.get('woow_ai_operator') for e in history or []):
             return prompt
         return '\n\n'.join(part for part in (prompt, OPERATOR_SYSTEM_NOTE) if part)
+
+    def _woow_ai_conversation_events(self, contact, history):
+        """Handoff, paused notice, pause and resume events since the oldest
+        message of the context (at most EVENT_MAX, oldest first)."""
+        if not self._woow_ai_is_livechat():
+            return super()._woow_ai_conversation_events(contact, history)
+        self.ensure_one()
+        domain = [('channel_id', '=', self.id)]
+        message_ids = [e['message_id'] for e in history or [] if e.get('message_id')]
+        if message_ids:
+            oldest = self.env['mail.message'].sudo().browse(min(message_ids))
+            domain.append(('create_date', '>=', oldest.create_date))
+        events = self.env['woow.ai.livechat.event'].sudo().search(domain, order='id desc', limit=EVENT_MAX)
+        return [{'date': event.create_date, 'kind': event.kind, 'text': self._woow_ai_event_text(event)}
+                for event in events.sorted('id')]
+
+    def _woow_ai_event_text(self, event):
+        """One sentence for the model (Traditional Chinese, like OPERATOR_SYSTEM_NOTE)."""
+
+        def quote(message, default=''):
+            text = html_to_text(message.body) if message else ''
+            text = ' '.join((text or default).split())
+            return text[:EVENT_QUOTE_CHARS] + ('…' if len(text) > EVENT_QUOTE_CHARS else '')
+
+        operator = self._woow_ai_operator_name(event.user_id.partner_id) if event.user_id else ''
+        operator = ('客服人員「%s」' % operator) if operator else '客服人員'
+        if event.kind == 'handoff':
+            asked = quote(event.trigger_message_id)
+            return ('訪客要求真人客服%s。系統（不是你）已發出轉接通知「%s」，並已通知真人客服人員（客服已收到通知）；'
+                    'AI 暫停回覆%s。這是事實：不要否認、更正或為這則通知道歉。') % (
+                '（訪客說：「%s」）' % asked if asked else '', quote(event.message_id, '已通知客服'),
+                ' %s 分鐘' % event.minutes if event.minutes else '')
+        if event.kind == 'paused_notice':
+            return 'AI 暫停期間訪客又傳訊息，系統（不是你）已發出等候提示「%s」，並再次通知真人客服人員。' % quote(
+                event.message_id, '請稍候')
+        if event.kind == 'pause':
+            return '%s暫停了 AI 回覆%s。' % (operator, ' %s 分鐘' % event.minutes if event.minutes else '')
+        return ('%s恢復了 AI 回覆：從這之後由你（AI）接手回答訪客；暫停期間沒有人回覆的訪客問題，請直接回答。'
+                '先前的轉接與通知都是真的。') % operator
+
+    def _woow_ai_notice_message_ids(self):
+        """Ids of the notices the AI posted for an event in this conversation."""
+        cache = self.env.context.get('woow_ai_lc_cache')
+        if cache and 'notices' in cache:
+            return cache['notices']
+        self.ensure_one()
+        events = self.env['woow.ai.livechat.event'].sudo().search(
+            [('channel_id', '=', self.id), ('message_id', '!=', False)])
+        return set(events.message_id.ids)
+
+    def _woow_ai_log_event(self, kind, message=None, trigger=None, minutes=0):
+        """Record a conversation event (never fails the caller)."""
+        self.ensure_one()
+        try:
+            with self.env.cr.savepoint():
+                return self.env['woow.ai.livechat.event'].sudo().create({
+                    'channel_id': self.id,
+                    'kind': kind,
+                    'message_id': message.id if message else False,
+                    'trigger_message_id': trigger.id if trigger else False,
+                    'user_id': self.env.uid if kind in ('pause', 'resume') and not self.env.user._is_superuser()
+                    else False,
+                    'minutes': minutes or 0,
+                })
+        except Exception:  # noqa: BLE001
+            _logger.exception("AI Live Chat %s: could not record the %s event", self.id, kind)
+            return self.env['woow.ai.livechat.event']
 
     def _woow_ai_requester(self, contact):
         if not self._woow_ai_is_livechat():
@@ -389,7 +467,10 @@ class DiscussChannel(models.Model):
         """Resume the AI now; answer the visitor's last message if no person answered it."""
         self.ensure_one()
         channel = self.sudo()
+        was_paused = channel._woow_ai_is_paused()
         channel.write({'woow_ai_paused_until': False, 'woow_ai_pause_notice_sent': False})
+        if was_paused:
+            self._woow_ai_log_event('resume')
         contact = channel._woow_ai_channel_contact()
         if not contact:
             return False
@@ -401,6 +482,14 @@ class DiscussChannel(models.Model):
         if last and channel._woow_ai_author_kind(last) == AUTHOR_VISITOR:
             return self.env['woow.ai.job']._create_for_message(channel, contact, last, kind='reply')
         return False
+
+    def _woow_ai_operator_pause(self):
+        """Pause asked by an operator (button, ``/ai off``): recorded as an event."""
+        self.ensure_one()
+        until = self._woow_ai_pause()
+        minutes = self.sudo().livechat_channel_id._woow_ai_pause_minutes_value()
+        self._woow_ai_log_event('pause', minutes=minutes)
+        return until
 
     def _woow_ai_maybe_paused_notice(self, message):
         """Visitor message blocked by the pause: one notice per pause, unless an
@@ -420,7 +509,8 @@ class DiscussChannel(models.Model):
         if channel._woow_ai_operator_wrote_recently():
             return
         channel.woow_ai_pause_notice_sent = True
-        contact._post_text(channel, text)
+        notice = contact._post_text(channel, text)
+        channel._woow_ai_log_event('paused_notice', message=notice, trigger=message)
         until = channel.woow_ai_paused_until
         channel._woow_ai_alert_operators('waiting', lambda ch, tz: ch.env._(
             'A visitor is waiting in "%(name)s": the AI is paused until %(time)s. '
@@ -459,7 +549,7 @@ class DiscussChannel(models.Model):
             channel._woow_ai_check_operator()
             if channel.channel_type != 'livechat':
                 raise UserError(self.env._('Only Live Chat conversations have an AI pause.'))
-            channel._woow_ai_pause()
+            channel._woow_ai_operator_pause()
         return True
 
     def execute_command_woow_ai(self, body='', **kwargs):
@@ -475,7 +565,7 @@ class DiscussChannel(models.Model):
             channel._woow_ai_resume()
             msg = self.env._('The AI answers this conversation again.')
         elif argument in _PAUSE_WORDS:
-            until = channel._woow_ai_pause()
+            until = self._woow_ai_operator_pause()
             msg = self.env._('The AI is paused until %(time)s.', time=format_time(until, self.env.user.tz))
         elif channel._woow_ai_is_paused():
             msg = self.env._('The AI is paused until %(time)s. Type /ai on to resume it now.',

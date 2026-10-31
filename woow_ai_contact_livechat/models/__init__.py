@@ -4,3 +4,4 @@ from . import discuss_channel
 from . import ai_contact
 from . import ai_job
 from . import legacy_migration
+from . import livechat_event

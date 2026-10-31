@@ -87,7 +87,7 @@ class TestHistory(LivechatCase):
         self.assertEqual([(e['role'], e['text']) for e in history], [
             ('user', '燈泡多少錢？'),
             ('assistant', 'AI 的回答'),
-            ('assistant', '[真人客服 客服小明] 我幫您查'),
+            ('user', '[真人客服 客服小明] 我幫您查'),  # a person, never the AI's words
             ('user', '謝謝'),
         ])
         prompt = session._woow_ai_system_prompt(self.contact, history)
@@ -115,7 +115,7 @@ class TestHistory(LivechatCase):
         history = session._woow_ai_history(self.contact, session._woow_ai_context_messages(self.contact))
         self.assertEqual(history[-1]['text'], '[真人客服 李大華] 我來')
 
-    def test_job_sends_operator_as_assistant(self):
+    def test_job_sends_operator_as_labelled_user_turn(self):
         session = self.new_session(visitor=self.visitor)
         self.post(session, self.visitor, '有貨嗎？')
         self.post(session, self.operator, '請稍等')
@@ -126,7 +126,8 @@ class TestHistory(LivechatCase):
         messages = self.request_body(post)['messages']
         self.assertIn(OPERATOR_SYSTEM_NOTE, messages[0]['content'])
         self.assertEqual(messages[1], {'role': 'user', 'content': '有貨嗎？'})
-        self.assertEqual(messages[2], {'role': 'assistant', 'content': '[真人客服 客服小明] 請稍等'})
+        self.assertEqual(messages[2], {'role': 'user', 'content': '[真人客服 客服小明] 請稍等'})
+        self.assertNotIn('assistant', [m['role'] for m in messages])
         self.assertEqual(messages[-1], {'role': 'user', 'content': '好'})
 
 
