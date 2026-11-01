@@ -6,8 +6,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Odoo Server 18.0-20250807\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-31 23:37+0000\n"
-"PO-Revision-Date: 2026-10-31 23:37+0000\n"
+"POT-Creation-Date: 2026-11-01 07:35+0000\n"
+"PO-Revision-Date: 2026-11-01 07:35+0000\n"
 "Last-Translator: \n"
 "Language-Team: \n"
 "MIME-Version: 1.0\n"
@@ -76,11 +76,8 @@ msgid "AI Contact Reply Job"
 msgstr ""
 
 #. module: woow_ai_contact
-#. odoo-javascript
-#: code:addons/woow_ai_contact/static/src/discuss_sidebar/ai_contacts_sidebar.js:0
 #: model:ir.actions.act_window,name:woow_ai_contact.action_woow_ai_contact
 #: model:ir.ui.menu,name:woow_ai_contact.menu_woow_ai_contact
-#: model:ir.ui.menu,name:woow_ai_contact.menu_woow_ai_root
 #: model_terms:ir.ui.view,arch_db:woow_ai_contact.portal_breadcrumbs_ai_contacts
 #: model_terms:ir.ui.view,arch_db:woow_ai_contact.portal_my_ai_contacts
 #: model_terms:ir.ui.view,arch_db:woow_ai_contact.portal_my_home_ai_contacts
@@ -132,12 +129,6 @@ msgstr ""
 #: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
 #: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_search
 msgid "Archived"
-msgstr ""
-
-#. module: woow_ai_contact
-#. odoo-javascript
-#: code:addons/woow_ai_contact/static/src/discuss_sidebar/ai_contacts_sidebar.xml:0
-msgid "Avatar"
 msgstr ""
 
 #. module: woow_ai_contact
@@ -197,6 +188,7 @@ msgid "Connection OK (HTTP %s)."
 msgstr ""
 
 #. module: woow_ai_contact
+#: model:ir.model,name:woow_ai_contact.model_res_partner
 #: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_push_key_wizard__contact_id
 msgid "Contact"
 msgstr ""
@@ -217,12 +209,6 @@ msgstr ""
 #: code:addons/woow_ai_contact/models/ai_contact_backend.py:0
 msgid ""
 "Could not connect to the backend. Check the URL and the network policy."
-msgstr ""
-
-#. module: woow_ai_contact
-#. odoo-javascript
-#: code:addons/woow_ai_contact/static/src/discuss_sidebar/ai_contacts_sidebar.js:0
-msgid "Could not open the conversation with this AI contact."
 msgstr ""
 
 #. module: woow_ai_contact
@@ -624,6 +610,11 @@ msgstr ""
 #. module: woow_ai_contact
 #: model:ir.model.fields.selection,name:woow_ai_contact.selection__woow_ai_call_log__status__ok
 msgid "OK"
+msgstr ""
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__onboarded_user_ids
+msgid "Onboarded Users"
 msgstr ""
 
 #. module: woow_ai_contact
@@ -1051,6 +1042,11 @@ msgid "Unfinished"
 msgstr ""
 
 #. module: woow_ai_contact
+#: model:ir.model,name:woow_ai_contact.model_res_users
+msgid "User"
+msgstr ""
+
+#. module: woow_ai_contact
 #: model_terms:ir.actions.act_window,help:woow_ai_contact.action_woow_ai_contact
 msgid ""
 "Users chat with AI contacts in Discuss; each one is connected to an OpenAI compatible backend\n"
@@ -1063,6 +1059,15 @@ msgid ""
 "Users in one of these groups can chat with this AI contact. Empty: nobody "
 "can open a direct chat (the AI contact is then only used by bridges such as "
 "Live Chat) and its bot partner stays archived."
+msgstr ""
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_contact__onboarded_user_ids
+msgid ""
+"Users whose direct chat with this AI contact was already created (or found) "
+"once. The chat is created automatically only for allowed users not in this "
+"list, the first time they open Discuss or the portal home: a chat they "
+"unpinned never comes back by itself."
 msgstr ""
 
 #. module: woow_ai_contact
