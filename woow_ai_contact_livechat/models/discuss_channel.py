@@ -35,6 +35,7 @@ from markupsafe import Markup
 
 from odoo import SUPERUSER_ID, fields, models
 from odoo.exceptions import AccessError, UserError
+from odoo.service.model import PG_CONCURRENCY_EXCEPTIONS_TO_RETRY
 
 from odoo.addons.woow_ai_contact.models.discuss_channel import (
     AUTHOR_IGNORE, AUTHOR_OK, html_to_text,
@@ -319,6 +320,8 @@ class DiscussChannel(models.Model):
                     'source': source or False,
                     'reason': reason or False,
                 })
+        except PG_CONCURRENCY_EXCEPTIONS_TO_RETRY:
+            raise  # aborted transaction (concurrent update): Odoo retries the request
         except Exception:  # noqa: BLE001
             _logger.exception("AI Live Chat %s: could not record the %s event", self.id, kind)
             return self.env['woow.ai.livechat.event']

@@ -4,6 +4,8 @@
 from datetime import timedelta
 from unittest.mock import patch
 
+from psycopg2 import errors
+
 from odoo import Command, fields
 from odoo.exceptions import AccessError
 from odoo.tests.common import new_test_user, tagged
@@ -148,6 +150,14 @@ class TestAiContactOnboarding(AiContactCase):
         self.assertIn('Store', result)
         self.assertFalse(self.contact._find_chat(self.internal.partner_id))
         self.assertNotIn(self.internal, self.contact.onboarded_user_ids, 'rolled back: tried again next time')
+
+    def test_onboarding_concurrency_errors_reach_odoo_retry(self):
+        Contact = type(self.env['woow.ai.contact'])
+        for exc in (errors.SerializationFailure, errors.LockNotAvailable, errors.DeadlockDetected):
+            with self.subTest(exc=exc.__name__), patch.object(
+                    Contact, '_get_or_create_chat', side_effect=exc('concurrent update')):
+                with self.assertRaises(exc):
+                    self.init_messaging(self.internal)
 
     # --- 31: "Start a conversation" ---
 

@@ -7,6 +7,8 @@ turns; pauses and resumes by operators are events too."""
 from datetime import timedelta
 from unittest.mock import patch
 
+from psycopg2 import errors
+
 from odoo import fields
 from odoo.tests.common import tagged
 
@@ -127,6 +129,20 @@ class TestConversationEvents(LivechatCase):
         self.assertEqual(self.events(session)[-1].kind, 'pause')
         texts = [e['text'] for e in session._woow_ai_conversation_events(self.contact, [])]
         self.assertIn('客服人員「客服小明」暫停了 AI 回覆 30 分鐘。', texts)
+
+    def test_event_concurrency_errors_reach_odoo_retry(self):
+        """A visitor and an operator writing at the same time: a concurrent update
+        raised while recording an event aborts the transaction; it must reach
+        Odoo's request retry instead of being logged and swallowed."""
+        session = self.new_session(visitor=self.visitor)
+        Event = type(self.env['woow.ai.livechat.event'])
+        for exc in (errors.SerializationFailure, errors.LockNotAvailable, errors.DeadlockDetected):
+            with self.subTest(exc=exc.__name__), patch.object(Event, 'create', side_effect=exc('concurrent update')):
+                with self.assertRaises(exc):
+                    session._woow_ai_log_event('resume')
+        with patch.object(Event, 'create', side_effect=ValueError('other')), \
+                self.assertLogs('odoo.addons.woow_ai_contact_livechat.models.discuss_channel', level='ERROR'):
+            self.assertFalse(session._woow_ai_log_event('resume'), 'other errors: logged, never fail the caller')
 
     def test_events_older_than_the_context_are_left_out(self):
         session = self.new_session(visitor=self.visitor)

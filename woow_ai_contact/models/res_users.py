@@ -8,6 +8,7 @@ import logging
 import psycopg2
 
 from odoo import models
+from odoo.service.model import PG_CONCURRENCY_EXCEPTIONS_TO_RETRY
 
 _logger = logging.getLogger(__name__)
 
@@ -42,7 +43,7 @@ class ResUsers(models.Model):
                 return Contact._onboard_user(self)
         except psycopg2.errors.ReadOnlySqlTransaction:
             raise
-        except psycopg2.errors.SerializationFailure:
+        except PG_CONCURRENCY_EXCEPTIONS_TO_RETRY:
             raise  # concurrent onboarding: Odoo retries the request
         except Exception:  # noqa: BLE001 - onboarding must never break Discuss
             _logger.exception("AI contacts: could not onboard user %s", self.id)

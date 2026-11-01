@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 from unittest.mock import patch
 
+from psycopg2 import errors
+
 from odoo import Command
 from odoo.tests.common import new_test_user, tagged
 from odoo.tools import mute_logger
@@ -111,6 +113,21 @@ class TestTrigger(AiContactCase):
         with patch.object(type(self.env['woow.ai.job']), '_create_for_message', side_effect=RuntimeError('boom')):
             message = self.post(chat, self.internal, 'hello')
         self.assertTrue(message.exists())
+        self.assertFalse(self.jobs(chat))
+
+    def test_concurrency_errors_reach_odoo_retry(self):
+        """Two people posting in the same channel at once (a group chat with a
+        portal user, cs_portal_discuss): Odoo's own pending write (the
+        channel's last_interest_dt) fails with a serialization error when the
+        guard's savepoint flushes. Logging and swallowing it left the request
+        in an aborted transaction (HTTP 500 for the sender); it must reach
+        Odoo's request retry like without this module."""
+        chat = self.chat(self.internal)
+        for exc in (errors.SerializationFailure, errors.LockNotAvailable, errors.DeadlockDetected):
+            with self.subTest(exc=exc.__name__), patch.object(
+                    type(chat), '_woow_ai_handle_new_message', side_effect=exc('concurrent update')):
+                with self.assertRaises(exc):
+                    self.post(chat, self.internal, 'hello')
         self.assertFalse(self.jobs(chat))
 
     def test_messages_in_user_language(self):

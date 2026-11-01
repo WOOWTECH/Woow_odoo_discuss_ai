@@ -16,6 +16,7 @@ import re
 
 from odoo import api, fields, models
 from odoo.exceptions import AccessError
+from odoo.service.model import PG_CONCURRENCY_EXCEPTIONS_TO_RETRY
 
 from odoo.addons.mail.tools.discuss import Store
 
@@ -181,6 +182,11 @@ class DiscussChannel(models.Model):
                 # Savepoint: a failure here must never undo the user's message.
                 with self.env.cr.savepoint():
                     self.sudo()._woow_ai_handle_new_message(message.sudo())
+            except PG_CONCURRENCY_EXCEPTIONS_TO_RETRY:
+                # concurrent update (e.g. two people posting in the same group at
+                # once, raised when the savepoint flushes Odoo's own writes): the
+                # transaction is aborted, Odoo retries the whole request
+                raise
             except Exception:  # noqa: BLE001
                 _logger.exception("AI contact: could not handle message %s in channel %s", message.id, self.id)
         return rdata
