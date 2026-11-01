@@ -1,21 +1,36 @@
 # -*- coding: utf-8 -*-
-"""User documents for openai backends (document_mode): text extraction
-(xlsx, xls, docx, csv, txt, PDF), PDF file parts, budgets, truncation and
-the notes the model sees; n8n unchanged."""
+"""User documents for openai backends (document_mode, decision 39): every
+document is sent as it is, as an OpenAI ``file`` part with its own type (no
+text extraction in Odoo), or as a signed link only; budgets shared with the
+inline images, the notes the model sees, the migration of the removed
+``text`` mode; n8n unchanged."""
 import base64
+import importlib.util
 import io
 import json
+import os
 import zipfile
 from unittest.mock import patch
 
 from odoo.tests.common import tagged
 
 from odoo.addons.woow_ai_contact.models import ai_contact_backend
-from odoo.addons.woow_ai_contact.tools import documents
+from odoo.addons.woow_ai_contact.tools import media
 
 from .common import BACKEND_POST, TINY_PNG, AiContactCase, http_response, openai_ok
 
 BACKEND = 'odoo.addons.woow_ai_contact.models.ai_contact_backend'
+XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+CSV = b'name,price\nA1,1520\n'
+
+
+def load_migration(version):
+    path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'migrations', version, 'post-migrate.py')
+    spec = importlib.util.spec_from_file_location('woow_ai_contact_migrate_%s' % version.replace('.', '_'), path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def make_pdf(text):
@@ -69,133 +84,40 @@ def make_docx(paragraphs=('規格書', 'Model A1 costs NT$1,520.'), table=(('型
 
 
 @tagged('woow_ai_contact')
-class TestDocumentTools(AiContactCase):
-    """tools/documents.py without the ORM."""
+class TestDocumentTypes(AiContactCase):
+    """media.document_mimetype: the type a document is sent with (content first, the name for look-alikes)."""
 
-    def test_kinds_from_content(self):
-        kind = documents.document_kind
-        self.assertEqual(kind('a.pdf', make_pdf('x')), documents.PDF)
-        self.assertEqual(kind('renamed.bin', make_pdf('x')), documents.PDF)  # content decides
-        self.assertEqual(kind('a.xlsx', make_xlsx()), documents.XLSX)
-        self.assertEqual(kind('a.docx', make_docx()), documents.DOCX)
-        self.assertEqual(kind('a.csv', b'a,b\n1,2\n'), documents.TEXT)
-        self.assertEqual(kind('a.md', b'# Title\n'), documents.TEXT)
-        self.assertEqual(kind('a.json', b'{"a": 1}'), documents.TEXT)
-        self.assertEqual(kind('notes', b'hello', 'text/plain'), documents.TEXT)
-        # active types are never read, whatever the name
+    def test_document_mimetype(self):
+        kind = media.document_mimetype
+        self.assertEqual(kind('a.pdf', make_pdf('x')), 'application/pdf')
+        self.assertEqual(kind('renamed.bin', make_pdf('x')), 'application/pdf')  # content decides
+        self.assertEqual(kind('a.xlsx', make_xlsx()), XLSX)  # openpyxl output may sniff as a plain zip
+        self.assertEqual(kind('a.docx', make_docx()), DOCX)
+        self.assertEqual(kind('a.csv', CSV), 'text/csv')
+        self.assertEqual(kind('a.md', b'# Title\n'), 'text/markdown')
+        self.assertEqual(kind('a.json', b'{"a": 1}'), 'application/json')
+        self.assertEqual(kind('a.txt', '中文'.encode()), 'text/plain')
+        # active types are never sent as files, whatever the name
         self.assertIsNone(kind('page.txt', b'<html><body><script>x()</script></body></html>'))
         self.assertIsNone(kind('x.txt', b'<svg xmlns="http://www.w3.org/2000/svg"></svg>'))
-        self.assertIsNone(kind('a.png', TINY_PNG))
+        self.assertIsNone(kind('a.png', TINY_PNG))  # images are inlined as images
         self.assertIsNone(kind('a.zip', make_docx()))  # a zip that is not named docx
+        self.assertIsNone(kind('fake.docx', b'plain text, not a zip'))
         self.assertIsNone(kind('empty.txt', b''))
-
-    def test_xlsx_markdown_per_sheet(self):
-        text, truncated = documents.xlsx_text(make_xlsx(), 10000)
-        self.assertFalse(truncated)
-        self.assertIn('## Sheet: 報價', text)
-        self.assertIn('| | A | B |', text)
-        self.assertIn('| 1 | Total | 12345 |', text)  # B1 keeps its address
-        self.assertIn('| 2 | a\\|b | 1.5 |', text)  # pipes escaped
-        self.assertIn('| 4 | after an empty row |  |', text)  # row 3 skipped, numbers kept
-        self.assertIn('## Sheet: Notes', text)
-        self.assertIn('| 2 |  |  | 備註 |', text)
+        self.assertTrue(media.is_document('a.XLSX', 'application/octet-stream'))
+        self.assertTrue(media.is_document('scan', 'application/pdf'))
+        self.assertFalse(media.is_document('movie.mp4', 'video/mp4'))
 
     def test_xls(self):
         try:
             import xlwt
         except ImportError:
-            self.skipTest('xlwt not installed (xls files are still read with xlrd)')
+            self.skipTest('xlwt not installed')
         book = xlwt.Workbook()
         book.add_sheet('S1').write(0, 1, 12345)
         buffer = io.BytesIO()
         book.save(buffer)
-        raw = buffer.getvalue()
-        self.assertEqual(documents.document_kind('old.xls', raw), documents.XLS)
-        self.assertIn('| 1 |  | 12345 |', documents.xls_text(raw, 1000)[0])
-
-    def test_docx_paragraphs_and_tables(self):
-        text, truncated = documents.docx_text(make_docx(), 10000)
-        self.assertFalse(truncated)
-        self.assertIn('規格書\nModel A1 costs NT$1,520.', text)
-        self.assertIn('| 型號 | 價格 |\n|---|---|\n| A1 | 1520 |', text)
-
-    def test_docx_entities_not_resolved(self):
-        xml = ('<?xml version="1.0"?><!DOCTYPE d [<!ENTITY x SYSTEM "file:///etc/passwd">]>'
-               '<w:document %s><w:body><w:p><w:r><w:t>&x;ok</w:t></w:r></w:p></w:body></w:document>' % W)
-        buffer = io.BytesIO()
-        with zipfile.ZipFile(buffer, 'w') as archive:
-            archive.writestr('word/document.xml', xml)
-        try:
-            text, _truncated = documents.docx_text(buffer.getvalue(), 1000)
-        except documents.DocumentError:
-            return
-        self.assertNotIn('root:', text)
-
-    def test_pdf_text_and_scan(self):
-        text, truncated = documents.pdf_text(make_pdf('The secret code is PINEAPPLE-77.'), 1000)
-        self.assertEqual((text, truncated), ('The secret code is PINEAPPLE-77.', False))
-        self.assertEqual(documents.pdf_text(make_pdf(''), 1000), ('', False))
-        with self.assertRaises(documents.DocumentError):
-            documents.pdf_text(b'%PDF-1.4 broken', 1000)
-
-    def test_pdf_reading_stops_at_the_budget(self):
-        pages = 30
-        objs = ['<</Type/Catalog/Pages 2 0 R>>',
-                '<</Type/Pages/Kids[%s]/Count %s>>' % (' '.join('%s 0 R' % (3 + 2 * i) for i in range(pages)), pages)]
-        for i in range(pages):
-            content = 'BT /F1 12 Tf 50 700 Td (PAGE-%02d %s) Tj ET' % (i, 'x' * 60)
-            objs.append('<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Contents %s 0 R'
-                        '/Resources<</Font<</F1 %s 0 R>>>>>>' % (4 + 2 * i, 3 + 2 * pages))
-            objs.append('<</Length %s>>\nstream\n%s\nendstream' % (len(content), content))
-        objs.append('<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>')
-        out, offsets = b'%PDF-1.4\n', []
-        for i, obj in enumerate(objs, 1):
-            offsets.append(len(out))
-            out += ('%s 0 obj\n%s\nendobj\n' % (i, obj)).encode()
-        xref = len(out)
-        out += ('xref\n0 %s\n0000000000 65535 f \n' % (len(objs) + 1)).encode()
-        out += b''.join(('%010d 00000 n \n' % o).encode() for o in offsets)
-        out += ('trailer<</Size %s/Root 1 0 R>>\nstartxref\n%s\n%%%%EOF' % (len(objs) + 1, xref)).encode()
-        full, truncated = documents.pdf_text(out, 100000)
-        self.assertFalse(truncated)
-        self.assertIn('PAGE-29', full)
-        part, truncated = documents.pdf_text(out, 200)  # stops after a few pages
-        self.assertTrue(truncated)
-        self.assertIn('PAGE-00', part)
-        self.assertLessEqual(len(part), 200)
-        self.assertNotIn('PAGE-29', part)
-
-    def test_extraction_cached_per_checksum(self):
-        documents._cache.clear()
-        with patch.object(documents, 'extract', wraps=documents.extract) as extract:
-            for _i in range(3):
-                self.assertEqual(documents.extract_cached('sum1', documents.TEXT, b'hello', 100, 'a.txt'),
-                                 ('hello', False))
-            self.assertEqual(extract.call_count, 1)
-            documents.extract_cached('sum2', documents.TEXT, b'other', 100, 'b.txt')
-            self.assertEqual(extract.call_count, 2)
-            for _i in range(2):
-                with self.assertRaises(documents.DocumentError):
-                    documents.extract_cached('sum3', documents.TEXT, b'a\x00b', 100, 'c.txt')
-            self.assertEqual(extract.call_count, 3)  # failures are cached too
-        for i in range(documents.CACHE_SIZE + 5):
-            documents.extract_cached('fill%s' % i, documents.TEXT, b'x', 100)
-        self.assertEqual(len(documents._cache), documents.CACHE_SIZE)
-
-    def test_text_encodings_and_cut(self):
-        self.assertEqual(documents.plain_text('名稱,價格\n燈,1520\n'.encode('cp950'), 100, 'a.csv'),
-                         ('名稱,價格\n燈,1520', False))
-        self.assertEqual(documents.plain_text('\ufeffhello'.encode('utf-8'), 100), ('hello', False))
-        self.assertEqual(documents.plain_text(b'0123456789', 4), ('0123', True))
-        with self.assertRaises(documents.DocumentError):
-            documents.plain_text(b'a\x00b', 10)
-        text, truncated = documents.xlsx_text(make_xlsx(), 40)
-        self.assertTrue(truncated)
-        self.assertLessEqual(len(text), 40)
-
-    def test_fence_longer_than_content(self):
-        self.assertEqual(documents.fenced('a ``` b', 'md'), '````md\na ``` b\n````')
-        self.assertEqual(documents.fenced('x'), '```\nx\n```')
+        self.assertEqual(media.document_mimetype('old.xls', buffer.getvalue()), 'application/vnd.ms-excel')
 
 
 @tagged('woow_ai_contact')
@@ -226,86 +148,83 @@ class TestDocumentRequests(AiContactCase):
             return content
         return '\n'.join(part['text'] for part in content if part['type'] == 'text')
 
+    def file_parts(self, content):
+        return [part['file'] for part in content if isinstance(part, dict) and part['type'] == 'file']
+
     def test_default_mode_is_file(self):
         self.assertEqual(self.contact.document_mode, 'file')
+        selection = self.env['woow.ai.contact']._fields['document_mode'].selection
+        self.assertEqual([value for value, _label in selection], ['file', 'link'])
 
-    def test_file_mode_pdf_part_and_xlsx_text(self):
-        chat = self.ask(('secret.pdf', self.PDF), ('total.xlsx', make_xlsx()))
+    def test_file_mode_sends_documents_as_they_are(self):
+        files = (('secret.pdf', self.PDF), ('total.xlsx', make_xlsx()), ('spec.docx', make_docx()),
+                 ('list.csv', CSV))
+        chat = self.ask(*files)
         content = self.last_user(chat)['content']
-        files = [part for part in content if part['type'] == 'file']
-        self.assertEqual(len(files), 1)
-        self.assertEqual(files[0]['file']['filename'], 'secret.pdf')
-        self.assertEqual(files[0]['file']['file_data'],
-                         'data:application/pdf;base64,' + base64.b64encode(self.PDF).decode())
+        parts = self.file_parts(content)
+        self.assertEqual([p['filename'] for p in parts], ['secret.pdf', 'total.xlsx', 'spec.docx', 'list.csv'])
+        for part, (name, raw), mimetype in zip(parts, files, ('application/pdf', XLSX, DOCX, 'text/csv')):
+            # the file itself with its own type: no conversion, no text read by Odoo
+            self.assertEqual(part['file_data'], 'data:%s;base64,%s' % (mimetype, base64.b64encode(raw).decode()))
         text = self.text_of(content)
         self.assertTrue(text.startswith('看附件\n'))
         self.assertIn('[附件] secret.pdf（application/pdf，', text)
-        self.assertIn('檔案已附在這則訊息', text)
-        self.assertIn('[附件內容] total.xlsx', text)
-        self.assertIn('```markdown\n## Sheet: 報價', text)
-        self.assertIn('| 1 | Total | 12345 |', text)
+        self.assertIn('[附件] total.xlsx（%s，' % XLSX, text)
+        self.assertEqual(text.count('檔案已附在這則訊息'), 4)
         self.assertNotIn('/woow_ai/attachment/', text)  # fully included: no link
+        self.assertNotIn('PINEAPPLE', text)  # nothing extracted
+        self.assertNotIn('附件內容', text)
 
-    def test_text_mode_reads_pdf_and_docx(self):
-        self.contact.document_mode = 'text'
-        chat = self.ask(('secret.pdf', self.PDF), ('spec.docx', make_docx()), ('list.csv', b'name,price\nA1,1520\n'))
+    def test_link_mode_only_links(self):
+        self.contact.document_mode = 'link'  # e.g. Hermes: HTTP 400 for file parts
+        chat = self.ask(('secret.pdf', self.PDF), ('total.xlsx', make_xlsx()), ('a.png', TINY_PNG))
         content = self.last_user(chat)['content']
-        self.assertIsInstance(content, str)  # no file part: plain text for any server (Hermes)
-        self.assertIn('[附件內容] secret.pdf（application/pdf，', content)
-        self.assertIn('```\nThe secret code is PINEAPPLE-77.\n```', content)
-        self.assertIn('[附件內容] spec.docx', content)
-        self.assertIn('| A1 | 1520 |', content)
-        self.assertIn('```csv\nname,price\nA1,1520\n```', content)
-
-    def test_link_mode_is_the_old_behaviour(self):
-        self.contact.document_mode = 'link'
-        chat = self.ask(('secret.pdf', self.PDF), ('total.xlsx', make_xlsx()))
-        content = self.last_user(chat)['content']
-        self.assertIsInstance(content, str)
-        self.assertEqual(content.count('/woow_ai/attachment/'), 2)
-        self.assertNotIn('附件內容', content)
-        self.assertNotIn('12345', content)
-
-    def test_scanned_pdf_note(self):
-        self.contact.document_mode = 'text'
-        chat = self.ask(('scan.pdf', make_pdf('')))
-        content = self.last_user(chat)['content']
-        self.assertIn('[附件] scan.pdf', content)  # the link stays
-        self.assertIn('[附件說明] scan.pdf：這個 PDF 沒有文字層', content)
-
-    def test_unreadable_document_note(self):
-        chat = self.ask(('broken.xlsx', b'PK\x03\x04 not really a zip'))
-        content = self.last_user(chat)['content']
-        self.assertIn('[附件] broken.xlsx', content)
-        self.assertIn('[附件說明] broken.xlsx：無法讀取內容', content)
+        self.assertFalse(self.file_parts(content))
+        text = self.text_of(content)
+        self.assertEqual(text.count('/woow_ai/attachment/'), 2)
+        self.assertNotIn('12345', text)
+        # images are inline in both modes
+        self.assertEqual([p['type'] for p in content], ['text', 'image_url'])
 
     def test_dangerous_and_other_files_stay_links(self):
-        chat = self.ask(('page.txt', b'<html><script>alert(1)</script></html>'), ('a.zip', make_docx()))
+        chat = self.ask(('page.txt', b'<html><script>alert(1)</script></html>'), ('a.zip', make_docx()),
+                        ('logo.svg', b'<svg xmlns="http://www.w3.org/2000/svg"></svg>'))
         content = self.last_user(chat)['content']
-        self.assertEqual(content.count('/woow_ai/attachment/'), 2)
-        self.assertNotIn('附件內容', content)
+        self.assertIsInstance(content, str)
+        self.assertEqual(content.count('/woow_ai/attachment/'), 3)
         self.assertNotIn('附件說明', content)
         self.assertNotIn('alert(1)', content)
 
-    def test_truncated_document_keeps_link(self):
-        with patch(BACKEND + '.DOC_TEXT_MAX_CHARS', 1200), patch(BACKEND + '.DOC_TEXT_MIN_CHARS', 10):
-            chat = self.ask(('long.txt', ('line %05d\n' % 1).encode() * 1000))
+    def test_file_over_size_limit_is_a_link(self):
+        with patch(BACKEND + '.DOC_FILE_MAX_BYTES', 100):
+            chat = self.ask(('secret.pdf', self.PDF))
             content = self.last_user(chat)['content']
-        self.assertIn('[附件內容] long.txt', content)
-        self.assertIn('[附件說明] long.txt：內容太長，只附上前 1200 字', content)
-        self.assertIn('[附件] long.txt', content)
+        self.assertIsInstance(content, str)
+        self.assertIn('[附件] secret.pdf', content)
         self.assertIn('/woow_ai/attachment/', content)
+        self.assertIn('[附件說明] secret.pdf：檔案太大', content)
 
-    def test_text_budget_newest_first(self):
+    def test_images_and_files_share_the_data_budget(self):
+        uri = len('data:image/png;base64,') + len(base64.b64encode(TINY_PNG))
+        with patch(BACKEND + '.INLINE_IMAGE_BUDGET', uri + 50):
+            chat = self.ask(('a.png', TINY_PNG), ('secret.pdf', self.PDF))
+            content = self.last_user(chat)['content']
+        self.assertEqual([part['type'] for part in content], ['text', 'image_url'])  # the PDF did not fit
+        self.assertIn('[附件說明] secret.pdf：這次請求的檔案額度', content[0]['text'])
+        self.assertIn('/woow_ai/attachment/', content[0]['text'])
+
+    def test_budget_newest_first(self):
         chat = self.chat(self.internal)
-        for name in ('old.txt', 'new.txt'):
-            att = self.attachment(chat, self.internal, name=name, raw=b'x' * 900)
+        for name in ('old.csv', 'new.csv'):
+            att = self.attachment(chat, self.internal, name=name, raw=b'x,y\n' * 200)
             self.post(chat, self.internal, name, attachments=att)
-        with patch(BACKEND + '.DOC_TEXT_BUDGET', 1000), patch(BACKEND + '.DOC_TEXT_MIN_CHARS', 500):
+        one = len('data:text/csv;base64,') + len(base64.b64encode(b'x,y\n' * 200))
+        with patch(BACKEND + '.INLINE_IMAGE_BUDGET', one + 10):
             messages = self.body(chat)['messages']
-        self.assertIn('[附件內容] new.txt', messages[-1]['content'])
-        self.assertIn('[附件說明] old.txt：內容沒有附上：這次請求的文件內容額度', messages[-2]['content'])
-        self.assertIn('[附件] old.txt', messages[-2]['content'])
+        self.assertEqual([p['filename'] for p in self.file_parts(messages[-1]['content'])], ['new.csv'])
+        self.assertIsInstance(messages[-2]['content'], str)
+        self.assertIn('[附件說明] old.csv：這次請求的檔案額度', messages[-2]['content'])
+        self.assertIn('[附件] old.csv', messages[-2]['content'])
 
     def test_count_and_age_limits(self):
         chat = self.chat(self.internal)
@@ -319,28 +238,27 @@ class TestDocumentRequests(AiContactCase):
         self.post(chat, self.internal, 'many', attachments=many)
         messages = self.body(chat)['messages']
         last = messages[-1]['content']
-        self.assertEqual(last.count('[附件內容] '), ai_contact_backend.DOC_MAX_COUNT)
-        self.assertEqual(last.count('：內容沒有附上：每次最多附上 %s 個文件' % ai_contact_backend.DOC_MAX_COUNT), 1)
-        first = next(m['content'] for m in messages if m['content'].startswith('first'))
+        self.assertEqual(len(self.file_parts(last)), ai_contact_backend.DOC_MAX_COUNT)
+        self.assertEqual(self.text_of(last).count('：每次最多附上 %s 個文件' % ai_contact_backend.DOC_MAX_COUNT), 1)
+        first = next(m['content'] for m in messages if isinstance(m['content'], str) and m['content'].startswith('first'))
         self.assertIn('[附件說明] first.txt：在較早的訊息中', first)
-        self.assertNotIn('附件內容', first)
 
-    def test_pdf_over_file_limit_sent_as_text(self):
-        with patch(BACKEND + '.DOC_FILE_MAX_BYTES', 100):
-            chat = self.ask(('secret.pdf', self.PDF))
-            content = self.last_user(chat)['content']
-        self.assertIsInstance(content, str)
-        self.assertIn('PINEAPPLE-77', content)
-        self.assertIn('[附件說明] secret.pdf：PDF 太大，無法直接附上檔案', content)
-
-    def test_images_and_pdf_share_the_data_budget(self):
-        uri = len('data:image/png;base64,') + len(base64.b64encode(TINY_PNG))
-        with patch(BACKEND + '.INLINE_IMAGE_BUDGET', uri + 50):
-            chat = self.ask(('a.png', TINY_PNG), ('secret.pdf', self.PDF))
-            content = self.last_user(chat)['content']
-        types = [part['type'] for part in content]
-        self.assertEqual(types, ['text', 'image_url'])  # the PDF did not fit: its text instead
-        self.assertIn('PINEAPPLE-77', content[0]['text'])
+    def test_migration_text_mode_becomes_link(self):
+        hermes = self.env['woow.ai.contact'].create({
+            'name': 'Hermes', 'endpoint_url': 'https://hermes.example.com/v1', 'api_key': 'x'})
+        self.env.flush_all()
+        cr = self.env.cr
+        cr.execute("UPDATE woow_ai_contact SET document_mode = 'text' WHERE id = %s", (hermes.id,))
+        load_migration('18.0.1.4.0').migrate(cr, '18.0.1.3.0')
+        hermes.invalidate_recordset()
+        self.assertEqual(hermes.document_mode, 'link')
+        self.assertEqual(self.contact.document_mode, 'file')
+        # 18.0.1.2.0: contacts without a model (Hermes) get link, not the removed text mode
+        cr.execute("UPDATE woow_ai_contact SET document_mode = 'file' WHERE id = %s", (hermes.id,))
+        load_migration('18.0.1.2.0').migrate(cr, '18.0.1.1.0')
+        hermes.invalidate_recordset()
+        self.contact.invalidate_recordset()
+        self.assertEqual((hermes.document_mode, self.contact.document_mode), ('link', 'file'))
 
     def test_bot_attachments_never_read(self):
         chat = self.chat(self.internal)

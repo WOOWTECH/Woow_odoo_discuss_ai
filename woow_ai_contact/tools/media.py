@@ -7,6 +7,8 @@
 - mimetype from the content, never from the backend; active types forced to
   ``application/octet-stream``
 - signed, expiring download URLs for user attachments
+- the type a user document is sent with to OpenAI compatible backends (as a
+  ``file`` part, unchanged: Odoo converts nothing, decision 39)
 """
 
 import base64
@@ -49,6 +51,24 @@ ACTIVE_TYPES = frozenset((
     'text/javascript', 'application/javascript', 'application/x-javascript',
     'text/ecmascript', 'application/ecmascript',
 ))
+
+# User documents sent as OpenAI file parts (docs/PROTOCOL.md "Documents"):
+# extension -> mimetype sent. The content decides (PDF, OOXML, OLE, text);
+# the name only tells look-alikes apart (an openpyxl xlsx sniffs as a zip,
+# csv / md / json sniff as text).
+DOCX_MIMETYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+XLSX_MIMETYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+XLSM_MIMETYPE = 'application/vnd.ms-excel.sheet.macroenabled.12'
+XLS_MIMETYPE = 'application/vnd.ms-excel'
+OOXML_DOCUMENT_TYPES = {'docx': DOCX_MIMETYPE, 'xlsx': XLSX_MIMETYPE, 'xlsm': XLSM_MIMETYPE}
+TEXT_DOCUMENT_TYPES = {
+    'txt': 'text/plain', 'text': 'text/plain', 'log': 'text/plain', 'md': 'text/markdown',
+    'markdown': 'text/markdown', 'csv': 'text/csv', 'tsv': 'text/tab-separated-values', 'json': 'application/json',
+}
+DOCUMENT_EXTENSIONS = frozenset(('pdf', 'xls')) | frozenset(OOXML_DOCUMENT_TYPES) | frozenset(TEXT_DOCUMENT_TYPES)
+ZIP_LIKE_TYPES = ('application/zip', 'application/x-zip-compressed', 'application/octet-stream')
+OLE_TYPES = (XLS_MIMETYPE, 'application/x-ole-storage', 'application/cdfv2', 'application/octet-stream')
+TEXT_LIKE_TYPES = ('application/json', 'application/csv', 'application/x-ndjson')
 
 # Hosts reachable with plain http (in-cluster / local services only)
 PLAIN_HTTP_HOSTS = ('localhost', '127.0.0.1', '::1')
@@ -128,6 +148,38 @@ def is_active_type(mimetype):
     mimetype = (mimetype or '').split(';')[0].strip().lower()
     return mimetype in ACTIVE_TYPES or mimetype.endswith('+xml') or 'javascript' in mimetype \
         or 'ecmascript' in mimetype
+
+
+def file_extension(name):
+    return os.path.splitext(name or '')[1].lower().lstrip('.')
+
+
+def is_document(name, mimetype=None):
+    """Cheap test (no content read): a file that may be sent as a document; document_mimetype decides."""
+    mimetype = (mimetype or '').split(';')[0].strip().lower()
+    return file_extension(name) in DOCUMENT_EXTENSIONS or mimetype == 'application/pdf'
+
+
+def document_mimetype(name, raw):
+    """Mimetype a user document is sent with as an OpenAI file part, or None
+    when it is not one (images, archives, media, active types: a link only)."""
+    if not raw:
+        return None
+    sniffed = sniff_mimetype(raw)
+    if is_active_type(sniffed):
+        return None
+    if sniffed == 'application/pdf':
+        return sniffed
+    if sniffed in OOXML_DOCUMENT_TYPES.values():
+        return sniffed
+    ext = file_extension(name)
+    if ext in OOXML_DOCUMENT_TYPES and sniffed in ZIP_LIKE_TYPES and raw[:4] == b'PK\x03\x04':
+        return OOXML_DOCUMENT_TYPES[ext]
+    if ext == 'xls' and sniffed in OLE_TYPES and raw[:8] == b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1':
+        return XLS_MIMETYPE
+    if ext in TEXT_DOCUMENT_TYPES and (sniffed.startswith('text/') or sniffed in TEXT_LIKE_TYPES):
+        return TEXT_DOCUMENT_TYPES[ext]
+    return None
 
 
 def sniff_mimetype(data):

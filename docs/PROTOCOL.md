@@ -184,8 +184,9 @@ Accept: text/event-stream
     ]},
     {"role": "assistant", "content": "這是 A1，售價 NT$1,520。"},
     {"role": "user", "content": [
-      {"type": "text", "text": "比較這兩份\n[附件] 型錄.pdf（application/pdf，88.0 KB）：檔案已附在這則訊息\n[附件內容] 報價.xlsx（application/vnd.openxmlformats-officedocument.spreadsheetml.sheet，9.8 KB）：以下是 Odoo 從檔案擷取的文字\n```markdown\n## Sheet: 報價\n| | A | B |\n|---|---|---|\n| 1 | 型號 | 價格 |\n| 2 | A1 | 1520 |\n```"},
-      {"type": "file", "file": {"filename": "型錄.pdf", "file_data": "data:application/pdf;base64,JVBERi0xLjQK…"}}
+      {"type": "text", "text": "比較這兩份\n[附件] 型錄.pdf（application/pdf，88.0 KB）：檔案已附在這則訊息\n[附件] 報價.xlsx（application/vnd.openxmlformats-officedocument.spreadsheetml.sheet，9.8 KB）：檔案已附在這則訊息"},
+      {"type": "file", "file": {"filename": "型錄.pdf", "file_data": "data:application/pdf;base64,JVBERi0xLjQK…"}},
+      {"type": "file", "file": {"filename": "報價.xlsx", "file_data": "data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,UEsDBBQ…"}}
     ]}
   ],
   "user": "woow-ai-0edfec80-42",
@@ -227,55 +228,45 @@ Accept: text/event-stream
 ### Documents
 
 Models do not open download links (the acceptance run: a PDF and an xlsx sent
-as links were "unreadable"). For `openai` backends Odoo therefore puts the
-content of the documents users send into the request, depending on the AI
-contact's **Documents Users Send** (`document_mode`, *Files* tab):
+as links were "unreadable"), so for `openai` backends the documents users send
+are put into the request **as they are**, depending on the AI contact's
+**Documents Users Send** (`document_mode`, *Files* tab). Odoo reads, extracts
+or converts nothing (decision 39, 18.0.1.4.0: the Odoo-side text extraction of
+18.0.1.2.0 and the `text` mode are removed; the model reads the file).
 
-| `document_mode` | PDF | xlsx / xls / docx / csv / tsv / txt / md / json | Use with |
-|---|---|---|---|
-| `file` (default) | an OpenAI `file` content part: `{"type": "file", "file": {"filename": "…", "file_data": "data:application/pdf;base64,…"}}` | text read by Odoo | LiteLLM, OpenAI (checked 2026-11-01 against the company LiteLLM `chatgpt-pool/gpt-6-sol`: the model read the PDF) |
-| `text` | the PDF's text layer, read by Odoo | text read by Odoo | Hermes and other servers that do not accept `file` parts |
-| `link` | signed link only | signed link only | the 18.0.1.1.0 behaviour (the backend downloads the file itself) |
+| `document_mode` | PDF, docx, xlsx, xlsm, xls, csv, tsv, txt, md, json | Use with |
+|---|---|---|
+| `file` (default) | an OpenAI `file` content part with the document's own type: `{"type": "file", "file": {"filename": "…", "file_data": "data:<mimetype>;base64,…"}}` | LiteLLM, OpenAI. Checked 2026-11-01 against the company LiteLLM (`chatgpt-pool/gpt-6-sol`): PDF, xlsx and docx file parts were read correctly (a code in a PDF, a cell value, docx text; about 4 s each) |
+| `link` | the signed link line only | **Hermes**: it answers HTTP 400 `unsupported_content_type` ("Inline image inputs are supported, but uploaded files and document inputs are not supported on this endpoint") to any `file` part; its agent can fetch the signed link with its web tools (`web.base.url` must be the public address of Odoo) |
 
-Upgrading to 18.0.1.2.0 sets `text` on existing `openai` contacts without a
-model (Hermes ignores the model, so Hermes contacts leave it empty) and `file`
-on the others.
+Images are inlined as `image_url` in both modes (Hermes accepts them).
+Upgrading to 18.0.1.4.0 turns `text` into `link`; contacts without a model
+(Hermes ones) upgraded from before 18.0.1.2.0 get `link`, the others `file`.
 
 What the model sees, in the user turn of the message that carried the file:
 
-- text: a header line `[附件內容] <name>（<mimetype>，<size>）：以下是 Odoo 從檔案擷取的文字`
-  and a fenced block. Spreadsheets: one markdown table per sheet (`## Sheet:
-  <name>`) with column letters and row numbers, so `B1` keeps its meaning
-  (cached values of formulas; at most 5,000 rows and 50 columns per sheet).
-  docx: paragraphs and tables. csv / txt / md / json: the file as it is (UTF-8,
-  UTF-16 with BOM or Big5 / cp950). PDF (mode `text`, or a PDF too large for a
-  file part): its text layer, at most 100 pages; reading stops as soon as the
-  character limit is reached. Extracted texts are cached per Odoo process
-  (16 documents, by checksum): each reply sends the recent documents again.
 - `file`: the line `[附件] <name>（<mimetype>，<size>）：檔案已附在這則訊息`
   in the text part and the `file` part after the text (and images).
-- whenever a document is skipped or cut, a line
-  `[附件說明] <name>：<reason>` and the usual signed link line: content cut
-  (`內容太長，只附上前 N 字…`), the request's document budget used up, more than
-  5 documents, file over 10 MB, a document of an older message, a PDF without
-  a text layer (a scan: `這個 PDF 沒有文字層（可能是掃描檔或圖片），擷取不到文字。`),
-  an unreadable file (corrupt, encrypted).
+- `link`, or a document that cannot be sent as a file: the usual signed link
+  line `[附件] <name>（<mimetype>，<size>）：<signed url>`; in mode `file` it
+  is followed by `[附件說明] <name>：<reason>`: file over 4 MB, the request's
+  data budget used up, more than 5 documents, a document of an older message.
 
 Limits (constants in `models/ai_contact_backend.py`):
 
 | Limit | Value |
 |---|---|
-| messages whose documents are read | the 5 most recent **user** messages, newest first (documents of AI / bot messages are never read) |
+| messages whose documents are sent | the 5 most recent **user** messages, newest first (documents of AI / bot messages are never read) |
 | documents per request | 5 |
-| file size read at all | 10 MB |
-| text per document / per request | 40,000 / 100,000 characters |
-| PDF as a `file` part | ≤ 4 MB each, and within the 7 MB data budget shared with inlined images; otherwise its text is sent (with a note) |
+| size of one document | ≤ 4 MB |
+| data budget | about 7 MB of data URIs per request, shared with the inlined images (images first); a document that does not fit is a link with a note |
 
-The type is detected from the content (the file name only separates a
-spreadsheet or docx from a plain zip, and names text files); active types
-(HTML, SVG, XML, JavaScript) are never read and stay links. Images, video,
-zip, pptx and other files stay as before. Requests stay under Hermes' 10 MB
-cap: at most 7 MB of data URIs plus about 300 KB of document text.
+The type is detected from the content (PDF, Office zip, OLE, text); the file
+name only tells look-alikes apart (an xlsx or docx from a plain zip, csv / md
+/ json from plain text) and gives the precise text type (`text/csv`, …).
+Active types (HTML, SVG, XML, JavaScript) are never sent as files and stay
+links, whatever the name. Images over the image limits, video, zip, pptx and
+other files stay links. Requests stay under Hermes' 10 MB cap.
 
 `n8n` backends are unchanged: every attachment is an `ATT` object with a
 signed link (the workflow downloads it and may read it with its own nodes).

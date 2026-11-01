@@ -37,8 +37,9 @@ server) or to an n8n webhook.
   default 1); never a read timeout or a 502/504/524 (tools may be running).
 - Users can send images and files: up to 4 images (about 7 MB) of the last 3
   messages are inlined for OpenAI-compatible backends; documents (PDF, xlsx,
-  xls, docx, csv, txt, md, json) are sent as PDF file parts and text read by
-  Odoo (setting *Documents Users Send*: `file`, `text` for Hermes, or `link`);
+  xls, docx, csv, txt, md, json) are sent as they are as file parts, Odoo
+  converts nothing (setting *Documents Users Send*: `file`, or `link` for Hermes,
+  which refuses file parts);
   everything else is a signed 1-hour link (`web.base.url` must be the public
   address of Odoo).
 - The model knows who it talks to: a short identity block (name, language,

@@ -18,8 +18,9 @@ Each AI contact is a bot partner connected to an OpenAI compatible backend
 * "typing" indicator while the backend answers, 5 minute default timeout;
   OpenAI compatible answers streamed (SSE) so proxies do not cut long answers
 * Attachments both ways: user images inlined for OpenAI compatible backends,
-  documents (PDF, xlsx, xls, docx, csv, txt, md, json) sent as PDF file parts
-  or text read by Odoo, other files as signed 1-hour download links; files in
+  documents (PDF, xlsx, xls, docx, csv, txt, md, json) sent as they are as
+  file parts (or as links for Hermes), other files as signed 1-hour download
+  links; Odoo converts nothing; files in
   AI replies are attached from allowlisted domains
 * Markdown replies (tables, lists, code) rendered to safe HTML
 * Push API: backends can message users first (one push key per AI contact)

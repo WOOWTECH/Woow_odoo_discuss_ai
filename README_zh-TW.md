@@ -25,7 +25,7 @@ Odoo 18 模組：讓內部用戶與 portal 用戶在 Discuss 裡和「AI 聯絡�
 - **串流回覆**（OpenAI 相容，預設開）：SSE 串流，連續 30 秒沒有資料才算失敗，避免 Cloudflare 約 100 秒的中斷。
 - **重試次數**（0–2，預設 1）：只對連線失敗、HTTP 429、503；讀取逾時與 502／504／524 不重送（後端可能已在執行工具）。
 - **測試連線**按鈕：OpenAI 相容送 `GET /models`；n8n 送 `{"event": "ping", ..., "action": "loadPreviousSession", "sessionId": "woow-ai-ping-<id>"}`（有密鑰才簽章），Chat Trigger 不會因此執行 agent。只顯示 HTTP 狀態，不會真的跑 AI。
-- **使用者傳送的文件**（OpenAI 相容，「檔案」分頁）：`PDF 以檔案送、其他文件以文字送`（預設，LiteLLM／OpenAI）｜`全部擷取文字`（Hermes 等不收 file 的後端；掃描檔 PDF 沒有文字）｜`只給下載連結`（舊行為）。上限見 [docs/PROTOCOL.md](docs/PROTOCOL.md#documents)。
+- **使用者傳送的文件**（OpenAI 相容，「檔案」分頁）：`把檔案送給模型`（預設，LiteLLM／OpenAI：PDF、Word、Excel、csv 等原檔以 file 送出，Odoo 不轉換）｜`只給下載連結`（Hermes 用：它對 file 一律回 HTTP 400，agent 可以自己抓連結）。圖片兩種都內嵌。上限見 [docs/PROTOCOL.md](docs/PROTOCOL.md#documents)。
 - **招呼語**／**錯誤訊息**、**下載網域白名單**（每行一個，可用 `*.example.com`）與**檔案大小上限**（預設 20 MB）。
 - **可使用的群組**：預設內部用戶＋portal；留空＝不能私訊（只給 Live Chat 用），機器人聯絡人保持封存，不會自動建私訊、也搜尋不到。
 - **推送 API**：按「產生推送金鑰」，金鑰只顯示一次（只存雜湊）。
@@ -59,7 +59,7 @@ n8n 的請求與回覆格式和 `im_livechat_ai` 18.0.1.2.0 相同，同一個�
 - 「開始對話」搜尋得到 AI 聯絡人（只列出自己有權限用的）；狀態顯示「機器人」（綠色愛心），跟 OdooBot 一樣。
 - 回覆在背景由 cron 程序處理：同一段對話一次一則（連發只回最新、帶完整上下文），最多 4 段對話同時進行，處理中顯示「輸入中」，預設逾時 5 分鐘，重啟不掉單。
 - portal：第一次進 `/my` 首頁就自動建好私訊（同樣只建一次）；`/my` 首頁「AI 聯絡人」卡片 → `/my/ai` → 開始對話。
-- 可傳圖片與檔案（OpenAI 相容後端每次最多內嵌 4 張、約 7 MB；PDF、xlsx、xls、docx、csv、txt、md、json 等文件依「使用者傳送的文件」設定送內容：預設 PDF 以檔案送、其他由 Odoo 擷取文字，Hermes 請選「全部擷取文字」；其餘給 1 小時簽名網址，`web.base.url` 必須是 Odoo 的對外網址）；AI 回覆支援表格、清單、程式碼，白名單網域的圖片／檔案、n8n base64 檔案、回覆中的 `data:image` 內嵌圖都會存成附件。
+- 可傳圖片與檔案（OpenAI 相容後端每次最多內嵌 4 張、約 7 MB；PDF、xlsx、xls、docx、csv、txt、md、json 等文件依「使用者傳送的文件」設定：預設原檔直接送給模型（Odoo 不轉換），Hermes 請選「只給下載連結」；其餘給 1 小時簽名網址，`web.base.url` 必須是 Odoo 的對外網址）；AI 回覆支援表格、清單、程式碼，白名單網域的圖片／檔案、n8n base64 檔案、回覆中的 `data:image` 內嵌圖都會存成附件。
 
 ## 協定
 

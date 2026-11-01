@@ -135,16 +135,15 @@ class WoowAiContact(models.Model):
              'and 10 seconds. Read timeouts and other HTTP errors are never retried: the backend may '
              'already be running tools.')
     document_mode = fields.Selection(
-        [('file', 'PDF as a file, other documents as text'),
-         ('text', 'Text extracted from every document'),
+        [('file', 'Send the files to the model'),
          ('link', 'Download links only')],
         string='Documents Users Send', default='file', required=True, groups='base.group_system',
-        help='OpenAI compatible backends only: how the documents users send (PDF, xlsx, xls, docx, csv, txt, md, '
-             'json) reach the model; models do not open download links. "PDF as a file": PDFs are sent as file '
-             'parts (LiteLLM and OpenAI read them), other documents as text read by Odoo. "Text": Odoo reads the '
-             'text of every document, PDFs included (use it for Hermes and other servers that do not accept '
-             'file parts; scanned PDFs without a text layer give no text). "Download links only": a signed '
-             '1-hour link, as before (the backend must download it itself). Size limits: docs/PROTOCOL.md.')
+        help='OpenAI compatible backends only: how the documents users send (PDF, docx, xlsx, xls, csv, txt, md, '
+             'json) reach the model. "Send the files": each document is sent as it is, as a file part with its '
+             'own type (LiteLLM and OpenAI read PDF, Word and Excel files); Odoo converts nothing. "Download '
+             'links only": a signed 1-hour link; use it for Hermes, which refuses file parts (HTTP 400) and '
+             'whose agent can fetch the link itself. Images are always sent inline. Size limits: '
+             'docs/PROTOCOL.md.')
     welcome_message = fields.Text(string='Welcome Message', groups='base.group_system',
                                   help='Posted by the AI when a user opens the conversation for the first time.')
     error_message = fields.Text(string='Error Message', groups='base.group_system',
