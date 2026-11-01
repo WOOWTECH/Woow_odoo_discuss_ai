@@ -23,7 +23,7 @@ Each AI contact is a bot partner connected to an OpenAI compatible backend
   AI replies are attached from allowlisted domains
 * Markdown replies (tables, lists, code) rendered to safe HTML
 * Push API: backends can message users first (one push key per AI contact)
-* Discuss sidebar "AI Contacts" section and portal /my/ai entry
+* Portal /my/ai entry
 * Call logs for administrators (no conversation content unless enabled)
 
 See README.md and docs/PROTOCOL.md in the repository.
@@ -43,11 +43,6 @@ See README.md and docs/PROTOCOL.md in the repository.
         'views/menus.xml',
         'views/portal_templates.xml',
     ],
-    'assets': {
-        'web.assets_backend': [
-            'woow_ai_contact/static/src/discuss_sidebar/**/*',
-        ],
-    },
     'uninstall_hook': 'uninstall_hook',
     'installable': True,
     'auto_install': False,

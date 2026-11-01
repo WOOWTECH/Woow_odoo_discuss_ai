@@ -9,8 +9,6 @@ from odoo import http, SUPERUSER_ID
 from odoo.http import request
 from odoo.tools.sql import escape_psql
 
-from odoo.addons.mail.tools.discuss import Store
-
 from ..tools import media
 
 _logger = logging.getLogger(__name__)
@@ -23,33 +21,6 @@ def _json_response(data, status=200):
 
 
 class WoowAiContactController(http.Controller):
-
-    # --- Backend Discuss sidebar ---
-
-    @http.route('/woow_ai/contacts', type='json', auth='user', readonly=True)
-    def woow_ai_contacts(self):
-        user = request.env.user
-        result = []
-        for contact in request.env['woow.ai.contact']._contacts_for_user(user):
-            chat = contact._find_chat(user.partner_id)
-            result.append({
-                'id': contact.id,
-                'name': contact.name,
-                'description': contact.description or '',
-                'partner_id': contact.partner_id.id,
-                'channel_id': chat.id or False,
-            })
-        return result
-
-    @http.route('/woow_ai/open', type='json', auth='user')
-    def woow_ai_open(self, contact_id):
-        user = request.env.user
-        contact = request.env['woow.ai.contact'].sudo().browse(int(contact_id)).exists()
-        if not contact or not contact.active or not contact._user_allowed(user):
-            raise NotFound()
-        chat, _created = contact._get_or_create_chat(user)
-        channel = request.env['discuss.channel'].browse(chat.id)  # as the user, for the store
-        return {'channel_id': channel.id, 'store_data': Store(channel).get_result()}
 
     # --- Signed download of user attachments (for the backends) ---
 

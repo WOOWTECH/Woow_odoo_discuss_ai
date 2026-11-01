@@ -192,26 +192,10 @@ class TestAiContactHttp(HttpCase):
         chat = self.contact._find_chat(self.internal.partner_id)
         self.assertIn('/odoo/discuss?active_id=discuss.channel_%s' % chat.id, response.headers['Location'])
 
-    # --- backend sidebar routes ---
+    # --- the Discuss sidebar section and its routes are gone (decision 33) ---
 
-    def test_sidebar_routes(self):
-        hidden = self.env['woow.ai.contact'].create({'name': 'Hidden', 'endpoint_url': 'https://x.example.com/v1',
-                                                     'allowed_group_ids': [Command.set([])]})
+    def test_sidebar_routes_removed(self):
         self.authenticate('aih_internal', 'aih_internal')
-        contacts = self.make_jsonrpc_request('/woow_ai/contacts', {})
-        names = [c['name'] for c in contacts]
-        self.assertIn('HTTP Advisor', names)
-        self.assertNotIn('Hidden', names)
-        entry = next(c for c in contacts if c['id'] == self.contact.id)
-        self.assertEqual(entry['partner_id'], self.contact.partner_id.id)
-        self.assertFalse(entry['channel_id'])
-        self.assertNotIn('endpoint_url', entry)
-        result = self.make_jsonrpc_request('/woow_ai/open', {'contact_id': self.contact.id})
-        chat = self.contact._find_chat(self.internal.partner_id)
-        self.assertEqual(result['channel_id'], chat.id)
-        threads = result['store_data'].get('discuss.channel') or result['store_data'].get('Thread') or []
-        self.assertTrue(any(t.get('id') == chat.id for t in threads), result['store_data'].keys())
-        contacts = self.make_jsonrpc_request('/woow_ai/contacts', {})
-        self.assertEqual(next(c for c in contacts if c['id'] == self.contact.id)['channel_id'], chat.id)
-        with self.assertRaises(Exception):
-            self.make_jsonrpc_request('/woow_ai/open', {'contact_id': hidden.id})
+        for route in ('/woow_ai/contacts', '/woow_ai/open'):
+            response = self.url_open(route, data='{}', headers={'Content-Type': 'application/json'})
+            self.assertEqual(response.status_code, 404, route)
