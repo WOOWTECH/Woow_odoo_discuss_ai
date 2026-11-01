@@ -6,8 +6,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Odoo Server 18.0-20250807\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-01 08:51+0000\n"
-"PO-Revision-Date: 2026-11-01 08:51+0000\n"
+"POT-Creation-Date: 2026-11-01 09:14+0000\n"
+"PO-Revision-Date: 2026-11-01 09:14+0000\n"
 "Last-Translator: \n"
 "Language-Team: \n"
 "MIME-Version: 1.0\n"
@@ -58,6 +58,11 @@ msgstr ""
 #: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
 #: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_job_search
 msgid "AI Contact"
+msgstr ""
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_discuss_channel__woow_ai_inactive_notice_sent
+msgid "AI Contact Archived Note Sent"
 msgstr ""
 
 #. module: woow_ai_contact
@@ -628,6 +633,12 @@ msgid "Only system administrators can change AI contact connections."
 msgstr ""
 
 #. module: woow_ai_contact
+#. odoo-python
+#: code:addons/woow_ai_contact/models/ai_contact.py:0
+msgid "Only system administrators can open the AI contacts."
+msgstr ""
+
+#. module: woow_ai_contact
 #: model:ir.model.fields.selection,name:woow_ai_contact.selection__woow_ai_call_log__backend_type__openai
 msgid "OpenAI compatible"
 msgstr ""
@@ -1009,6 +1020,18 @@ msgstr ""
 #. odoo-python
 #: code:addons/woow_ai_contact/models/ai_contact.py:0
 msgid "The timeout must be between 5 and 3600 seconds."
+msgstr ""
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,help:woow_ai_contact.field_discuss_channel__woow_ai_inactive_notice_sent
+msgid ""
+"The user of this direct chat was told once that its AI contact is archived."
+msgstr ""
+
+#. module: woow_ai_contact
+#. odoo-python
+#: code:addons/woow_ai_contact/models/discuss_channel.py:0
+msgid "This AI contact is no longer available."
 msgstr ""
 
 #. module: woow_ai_contact

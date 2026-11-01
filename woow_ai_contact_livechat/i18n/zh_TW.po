@@ -23,7 +23,9 @@ msgid ""
 "%(moved)s waiting job(s) moved; %(busy)s conversation(s) were being answered"
 " by im_livechat_ai: the AI contact answers their waiting messages once it is"
 " done."
-msgstr "已搬移 %(moved)s 筆等待中的工作；%(busy)s 段對話當時正由 im_livechat_ai 回覆：等它回完，AI 聯絡人再回覆其中還在等的訊息。"
+msgstr ""
+"已搬移 %(moved)s 筆等待中的工作；%(busy)s 段對話當時正由 im_livechat_ai 回覆：等它回完，AI "
+"聯絡人再回覆其中還在等的訊息。"
 
 #. module: woow_ai_contact_livechat
 #. odoo-python
@@ -72,6 +74,11 @@ msgid "AI Handoff Phrases"
 msgstr "AI 轉真人關鍵詞"
 
 #. module: woow_ai_contact_livechat
+#: model:ir.model,name:woow_ai_contact_livechat.model_woow_ai_livechat_event
+msgid "AI Live Chat Conversation Event"
+msgstr "AI 線上客服對話事件"
+
+#. module: woow_ai_contact_livechat
 #. odoo-python
 #: code:addons/woow_ai_contact_livechat/models/discuss_channel.py:0
 msgid "AI Live Chat: no answer"
@@ -111,10 +118,25 @@ msgid "AI Was On In im_livechat_ai"
 msgstr "im_livechat_ai 原本開啟 AI"
 
 #. module: woow_ai_contact_livechat
+#: model:ir.model.fields.selection,name:woow_ai_contact_livechat.selection__woow_ai_livechat_event__source__backend
+msgid "AI backend"
+msgstr "AI 後端"
+
+#. module: woow_ai_contact_livechat
 #. odoo-javascript
 #: code:addons/woow_ai_contact_livechat/static/src/channel_commands.js:0
 msgid "AI contact: /ai on resumes it now, /ai off pauses it"
 msgstr "AI 聯絡人：/ai on 立即恢復，/ai off 暫停"
+
+#. module: woow_ai_contact_livechat
+#: model:ir.model.fields.selection,name:woow_ai_contact_livechat.selection__woow_ai_livechat_event__kind__pause
+msgid "AI paused by an operator"
+msgstr "客服暫停 AI"
+
+#. module: woow_ai_contact_livechat
+#: model:ir.model.fields.selection,name:woow_ai_contact_livechat.selection__woow_ai_livechat_event__kind__resume
+msgid "AI resumed by an operator"
+msgstr "客服恢復 AI"
 
 #. module: woow_ai_contact_livechat
 #: model_terms:ir.ui.view,arch_db:woow_ai_contact_livechat.view_woow_ai_livechat_switch_wizard_form
@@ -165,14 +187,26 @@ msgid "Confirm that the price regression passed on the new backend first."
 msgstr "請先確認新後端已通過價格回歸測試。"
 
 #. module: woow_ai_contact_livechat
+#: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_event__channel_id
+msgid "Conversation"
+msgstr "對話"
+
+#. module: woow_ai_contact_livechat
+#: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_event__create_uid
 #: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_switch_wizard__create_uid
 msgid "Created by"
 msgstr "建立者"
 
 #. module: woow_ai_contact_livechat
+#: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_event__create_date
 #: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_switch_wizard__create_date
 msgid "Created on"
 msgstr "建立時間"
+
+#. module: woow_ai_contact_livechat
+#: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_event__source
+msgid "Decided By"
+msgstr "判斷來源"
 
 #. module: woow_ai_contact_livechat
 #: model:ir.model,name:woow_ai_contact_livechat.model_discuss_channel
@@ -180,9 +214,15 @@ msgid "Discussion Channel"
 msgstr "討論頻道"
 
 #. module: woow_ai_contact_livechat
+#: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_event__display_name
 #: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_switch_wizard__display_name
 msgid "Display Name"
 msgstr "顯示名稱"
+
+#. module: woow_ai_contact_livechat
+#: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_event__kind
+msgid "Event"
+msgstr "事件"
 
 #. module: woow_ai_contact_livechat
 #: model_terms:ir.ui.view,arch_db:woow_ai_contact_livechat.im_livechat_channel_view_form_woow_ai
@@ -224,21 +264,58 @@ msgid "Finished"
 msgstr "已完成"
 
 #. module: woow_ai_contact_livechat
+#. odoo-python
+#: code:addons/woow_ai_contact_livechat/models/legacy_migration.py:0
+msgid ""
+"Found on %(date)s (UTC) with the AI contact \"%(name)s\" already set by "
+"hand: kept. im_livechat_ai answered this channel: %(answer)s."
+msgstr ""
+"%(date)s（UTC）發現已手動設定 AI 聯絡人「%(name)s」：保留。im_livechat_ai 原本回覆這個頻道：%(answer)s。"
+
+#. module: woow_ai_contact_livechat
+#: model:ir.model.fields.selection,name:woow_ai_contact_livechat.selection__woow_ai_livechat_event__kind__handoff
+msgid "Handed over to a human"
+msgstr "已轉接真人客服"
+
+#. module: woow_ai_contact_livechat
+#: model:ir.model.fields.selection,name:woow_ai_contact_livechat.selection__woow_ai_livechat_event__source__keyword
+msgid "Handoff phrase"
+msgstr "轉真人關鍵詞"
+
+#. module: woow_ai_contact_livechat
+#: model:ir.model.fields,help:woow_ai_contact_livechat.field_woow_ai_livechat_event__reason
+msgid "Handoff reason given by the backend (n8n \"handoff_reason\")."
+msgstr "後端提供的轉真人原因（n8n「handoff_reason」）。"
+
+#. module: woow_ai_contact_livechat
+#: model:ir.model.fields,help:woow_ai_contact_livechat.field_woow_ai_livechat_event__source
+msgid ""
+"Handoff: a handoff phrase of the channel, or the AI backend (n8n "
+"\"handoff\": true or the [[handoff]] marker). Empty before 18.0.1.2.0: a "
+"phrase."
+msgstr ""
+"轉真人的判斷來源：頻道的轉真人關鍵詞，或 AI 後端（n8n「handoff」: true 或 [[handoff]] 標記）。18.0.1.2.0 "
+"之前的紀錄空白＝關鍵詞。"
+
+#. module: woow_ai_contact_livechat
 #: model_terms:ir.ui.view,arch_db:woow_ai_contact_livechat.im_livechat_channel_view_form_woow_ai
 msgid "Human Handoff"
 msgstr "轉真人客服"
 
 #. module: woow_ai_contact_livechat
+#: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_event__id
 #: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_switch_wizard__id
 msgid "ID"
 msgstr "ID"
 
 #. module: woow_ai_contact_livechat
+#: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_event__write_uid
 #: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_switch_wizard__write_uid
 msgid "Last Updated by"
 msgstr "最後更新者"
 
 #. module: woow_ai_contact_livechat
+#: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_event__write_date
 #: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_switch_wizard__write_date
 msgid "Last Updated on"
 msgstr "最後更新時間"
@@ -272,7 +349,9 @@ msgid ""
 "Live Chat visitors are often anonymous: an AI contact used here should only reach public\n"
 "                        data (products, prices, opening hours). The backend receives channel type \"livechat\" and\n"
 "                        user.is_guest."
-msgstr "Live Chat 訪客多半是匿名的：用在這裡的 AI 聯絡人只應查得到公開資料（商品、價格、營業時間）。後端會收到 channel type「livechat」與 user.is_guest。"
+msgstr ""
+"Live Chat 訪客多半是匿名的：用在這裡的 AI 聯絡人只應查得到公開資料（商品、價格、營業時間）。後端會收到 channel "
+"type「livechat」與 user.is_guest。"
 
 #. module: woow_ai_contact_livechat
 #: model:ir.model,name:woow_ai_contact_livechat.model_im_livechat_channel
@@ -314,6 +393,11 @@ msgid ""
 msgstr "未搬移：temperature、max tokens（請在後端／LiteLLM 設定）。"
 
 #. module: woow_ai_contact_livechat
+#: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_event__message_id
+msgid "Notice"
+msgstr "通知訊息"
+
+#. module: woow_ai_contact_livechat
 #. odoo-python
 #: code:addons/woow_ai_contact_livechat/models/discuss_channel.py:0
 msgid "Only Live Chat conversations have an AI pause."
@@ -350,6 +434,30 @@ msgid "Open the conversation"
 msgstr "開啟對話"
 
 #. module: woow_ai_contact_livechat
+#: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_event__user_id
+msgid "Operator"
+msgstr "客服人員"
+
+#. module: woow_ai_contact_livechat
+#: model:ir.model.fields,help:woow_ai_contact_livechat.field_im_livechat_channel__woow_ai_handoff_keywords
+msgid ""
+"Optional. The AI backend decides when the visitor wants a human and hands "
+"over by itself (it ends its reply with [[handoff]], or n8n answers "
+"\"handoff\": true). Phrases here are an extra pre-filter: a visitor message "
+"containing one of them is handed over at once, without calling the backend. "
+"Separated by commas or new lines; Latin words match whole words only, case "
+"insensitive. Prefer phrases (\"找真人\") over single words (\"客服\"), which also"
+" match ordinary questions. Empty (default): the backend decides."
+msgstr ""
+"選填。訪客要不要找真人由 AI 後端判斷並自動轉接（回覆最後加 [[handoff]]，或 n8n 回 \"handoff\": "
+"true）。這裡的關鍵詞是額外的前置篩選：訪客訊息含其中一個就立即轉真人，不呼叫後端。以逗號或換行分隔；英文整字比對、不分大小寫。建議用片語（「找真人」）而不是單字（「客服」），單字也會命中一般問題。空白（預設）＝交給後端判斷。"
+
+#. module: woow_ai_contact_livechat
+#: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_event__minutes
+msgid "Pause (minutes)"
+msgstr "暫停（分鐘）"
+
+#. module: woow_ai_contact_livechat
 #: model_terms:ir.ui.view,arch_db:woow_ai_contact_livechat.discuss_channel_view_form_woow_ai
 msgid "Pause AI"
 msgstr "暫停 AI"
@@ -360,9 +468,16 @@ msgid "Paused Notice Sent"
 msgstr "已送出暫停提示"
 
 #. module: woow_ai_contact_livechat
+#: model:ir.model.fields.selection,name:woow_ai_contact_livechat.selection__woow_ai_livechat_event__kind__paused_notice
+msgid "Paused notice"
+msgstr "暫停提示"
+
+#. module: woow_ai_contact_livechat
 #: model:ir.model.fields,help:woow_ai_contact_livechat.field_im_livechat_channel__woow_ai_handoff_message
-msgid "Posted by the AI when the visitor asks for a human."
-msgstr "訪客要求真人客服時，由 AI 張貼的固定訊息。"
+msgid ""
+"Posted by the AI when the visitor is handed over to a human: on a handoff "
+"phrase, or when the backend hands over without writing a reply of its own."
+msgstr "轉真人時由 AI 張貼：訪客說了轉真人關鍵詞，或後端決定轉接但沒有寫回覆時。"
 
 #. module: woow_ai_contact_livechat
 #: model:ir.model.fields,help:woow_ai_contact_livechat.field_im_livechat_channel__woow_ai_paused_message
@@ -396,19 +511,14 @@ msgid "Previous AI Bot"
 msgstr "原本的 AI 機器人"
 
 #. module: woow_ai_contact_livechat
+#: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_event__reason
+msgid "Reason"
+msgstr "原因"
+
+#. module: woow_ai_contact_livechat
 #: model_terms:ir.ui.view,arch_db:woow_ai_contact_livechat.discuss_channel_view_form_woow_ai
 msgid "Resume AI now"
 msgstr "立即恢復 AI"
-
-#. module: woow_ai_contact_livechat
-#: model:ir.model.fields,help:woow_ai_contact_livechat.field_im_livechat_channel__woow_ai_handoff_keywords
-msgid ""
-"Separated by commas or new lines. A visitor message containing one of them "
-"gets the handoff message, pauses the AI and alerts the operators. Latin "
-"words match whole words only, case insensitive. Prefer phrases (\"找真人\") "
-"over single words (\"客服\"), which also match ordinary questions. Empty: no "
-"keyword handoff."
-msgstr "以逗號或換行分隔。訪客訊息含其中任一個，就回轉真人訊息、暫停 AI 並通知客服。英文字詞只比對整個字、不分大小寫。請用片語（「找真人」）而不是單字（「客服」），單字也會命中一般問題。空白＝不做關鍵字轉真人。"
 
 #. module: woow_ai_contact_livechat
 #: model_terms:ir.ui.view,arch_db:woow_ai_contact_livechat.view_woow_ai_livechat_switch_wizard_form
@@ -452,18 +562,24 @@ msgstr "已從 im_livechat_ai 切換"
 #. odoo-python
 #: code:addons/woow_ai_contact_livechat/models/legacy_migration.py:0
 msgid ""
-"Switched on %(date)s (UTC) by %(user)s: AI %(state)s, %(moved)s job(s) "
-"moved (%(busy)s conversation(s) answered by the AI contact once "
-"im_livechat_ai is done)."
-msgstr "%(date)s（UTC）由 %(user)s 切換：AI %(state)s，搬移 %(moved)s 筆工作（%(busy)s 段對話等 im_livechat_ai 回完後由 AI 聯絡人接著回覆）。"
+"Switched on %(date)s (UTC) by %(user)s: AI %(state)s, %(moved)s job(s) moved"
+" (%(busy)s conversation(s) answered by the AI contact once im_livechat_ai is"
+" done)."
+msgstr ""
+"%(date)s（UTC）由 %(user)s 切換：AI %(state)s，搬移 %(moved)s 筆工作（%(busy)s 段對話等 "
+"im_livechat_ai 回完後由 AI 聯絡人接著回覆）。"
 
 #. module: woow_ai_contact_livechat
 #. odoo-python
 #: code:addons/woow_ai_contact_livechat/models/legacy_migration.py:0
 msgid ""
-"The 1.1.0 default handoff words (single words such as 客服, 人工) were replaced "
-"by phrases: %(keywords)s."
-msgstr "1.1.0 預設的轉真人關鍵字（「客服」「人工」等單字）已換成片語：%(keywords)s。"
+"The 1.1.0 default handoff words (single words such as 客服, 人工) were removed: "
+"the AI backend decides when to hand the visitor to a human (it ends its "
+"reply with [[handoff]]). Add phrases in \"AI Handoff Phrases\" only if you "
+"want a pre-filter."
+msgstr ""
+"已移除 1.1.0 的預設轉真人單字（例如「客服」「人工」）：改由 AI 後端判斷何時轉真人（回覆最後加 "
+"[[handoff]]）。需要前置篩選時再到「轉真人關鍵詞」填片語。"
 
 #. module: woow_ai_contact_livechat
 #. odoo-python
@@ -484,7 +600,9 @@ msgid ""
 "                                that conversation; operators type <code>/ai on</code> to resume it at once or\n"
 "                                <code>/ai off</code> to pause it. The backend should only use public data tools here\n"
 "                                (anonymous visitors)."
-msgstr "AI 聯絡人回覆這個頻道的訪客。客服在對話中發言會讓 AI 在該對話暫停；客服輸入 <code>/ai on</code> 立即恢復、<code>/ai off</code> 暫停。這裡的後端只應使用公開資料的工具（訪客多半匿名）。"
+msgstr ""
+"AI 聯絡人回覆這個頻道的訪客。客服在對話中發言會讓 AI 在該對話暫停；客服輸入 <code>/ai on</code> 立即恢復、<code>/ai"
+" off</code> 暫停。這裡的後端只應使用公開資料的工具（訪客多半匿名）。"
 
 #. module: woow_ai_contact_livechat
 #: model:ir.model.fields,help:woow_ai_contact_livechat.field_discuss_channel__woow_ai_paused_until
@@ -507,7 +625,9 @@ msgid ""
 "The AI contact that answers the visitors. Only system administrators see and"
 " change its backend. The backend should only use public data tools for Live "
 "Chat (channel type \"livechat\", guest visitors)."
-msgstr "回覆訪客的 AI 聯絡人。只有系統管理員看得到並能修改它的後端。後端對 Live Chat（channel type「livechat」、guest 訪客）只應使用公開資料的工具。"
+msgstr ""
+"回覆訪客的 AI 聯絡人。只有系統管理員看得到並能修改它的後端。後端對 Live Chat（channel type「livechat」、guest "
+"訪客）只應使用公開資料的工具。"
 
 #. module: woow_ai_contact_livechat
 #. odoo-python
@@ -522,6 +642,17 @@ msgstr "AI 客服無法回覆對話「%(name)s」（%(reason)s）。已向訪客
 #: code:addons/woow_ai_contact_livechat/models/ai_job.py:0
 msgid "The AI could not answer \"%(name)s\" (%(reason)s): please take over."
 msgstr "AI 客服無法回覆對話「%(name)s」（%(reason)s），請盡快接手。"
+
+#. module: woow_ai_contact_livechat
+#. odoo-python
+#: code:addons/woow_ai_contact_livechat/models/ai_job.py:0
+msgid ""
+"The AI handed the visitor in \"%(name)s\" over to a human (%(reason)s). The "
+"AI is paused for %(minutes)s minutes: please take over. Type /ai on in the "
+"conversation to resume the AI now."
+msgstr ""
+"AI 已把「%(name)s」的訪客轉給真人客服（%(reason)s）。AI 暫停 %(minutes)s 分鐘，請接手。在對話中輸入 /ai on "
+"可立即恢復 AI。"
 
 #. module: woow_ai_contact_livechat
 #. odoo-python
@@ -548,13 +679,20 @@ msgid ""
 "The channel used the 1.1.0 product tools. The new contact has none: its "
 "prompt forbids quoting prices until the backend looks them up (Hermes / n8n "
 "with Odoo MCP); run the price regression before switching."
-msgstr "這個頻道原本使用 1.1.0 的商品查詢工具。新的聯絡人沒有工具：在後端能查價（Hermes／n8n＋Odoo MCP）之前，提示詞禁止報價；切換前請跑價格回歸測試。"
+msgstr ""
+"這個頻道原本使用 1.1.0 的商品查詢工具。新的聯絡人沒有工具：在後端能查價（Hermes／n8n＋Odoo "
+"MCP）之前，提示詞禁止報價；切換前請跑價格回歸測試。"
 
 #. module: woow_ai_contact_livechat
 #. odoo-python
 #: code:addons/woow_ai_contact_livechat/models/im_livechat_channel.py:0
 msgid "The migration fields are written by the migration actions only."
 msgstr "搬移欄位只能由搬移動作寫入。"
+
+#. module: woow_ai_contact_livechat
+#: model:ir.model.fields,help:woow_ai_contact_livechat.field_woow_ai_livechat_event__message_id
+msgid "The notice the AI posted for this event (left out of the history)."
+msgstr "AI 為這個事件張貼的通知（不放進送給模型的歷史）。"
 
 #. module: woow_ai_contact_livechat
 #. odoo-python
@@ -579,7 +717,13 @@ msgid ""
 "The visitor in \"%(name)s\" asks for a human. The AI is paused for "
 "%(minutes)s minutes: please take over. Type /ai on in the conversation to "
 "resume the AI now."
-msgstr "訪客在對話「%(name)s」要求真人客服，AI 已暫停回覆 %(minutes)s 分鐘，請盡快接手。在對話中輸入 /ai on 可立即恢復 AI。"
+msgstr ""
+"訪客在對話「%(name)s」要求真人客服，AI 已暫停回覆 %(minutes)s 分鐘，請盡快接手。在對話中輸入 /ai on 可立即恢復 AI。"
+
+#. module: woow_ai_contact_livechat
+#: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_event__trigger_message_id
+msgid "Visitor Message"
+msgstr "訪客訊息"
 
 #. module: woow_ai_contact_livechat
 #: model:ir.model.fields,help:woow_ai_contact_livechat.field_im_livechat_channel__woow_ai_enabled
@@ -636,7 +780,9 @@ msgid ""
 "relies on its backend (Hermes / n8n with Odoo MCP). Ask the price questions "
 "of docs/LIVECHAT.md as a guest first: every price right, no invented price, "
 "links to the website only."
-msgstr "im_livechat_ai 用自己的商品工具查價；AI 聯絡人靠它的後端（Hermes／n8n＋Odoo MCP）。請先以訪客身分問 docs/LIVECHAT.md 的價格題：每個價格都正確、沒有編造價格、連結只指向官網。"
+msgstr ""
+"im_livechat_ai 用自己的商品工具查價；AI 聯絡人靠它的後端（Hermes／n8n＋Odoo MCP）。請先以訪客身分問 "
+"docs/LIVECHAT.md 的價格題：每個價格都正確、沒有編造價格、連結只指向官網。"
 
 #. module: woow_ai_contact_livechat
 #. odoo-python
@@ -673,7 +819,9 @@ msgstr "im_livechat_ai 仍有 18.0.1.0.x 的每頻道金鑰欄位：它的 18.0.
 msgid ""
 "im_livechat_ai stops answering this channel and the AI contact takes over (on if im_livechat_ai\n"
 "                    was on). Its product tools are gone: prices now come from the AI contact's backend only."
-msgstr "im_livechat_ai 停止回覆這個頻道，改由 AI 聯絡人接手（im_livechat_ai 原本開著才會開啟）。商品工具不再提供：價格只來自 AI 聯絡人的後端。"
+msgstr ""
+"im_livechat_ai 停止回覆這個頻道，改由 AI 聯絡人接手（im_livechat_ai 原本開著才會開啟）。商品工具不再提供：價格只來自 "
+"AI 聯絡人的後端。"
 
 #. module: woow_ai_contact_livechat
 #. odoo-python
@@ -698,71 +846,3 @@ msgstr "開啟"
 #: code:addons/woow_ai_contact_livechat/models/legacy_migration.py:0
 msgid "yes"
 msgstr "是"
-
-#. module: woow_ai_contact_livechat
-#. odoo-python
-#: code:addons/woow_ai_contact_livechat/models/legacy_migration.py:0
-msgid ""
-"Found on %(date)s (UTC) with the AI contact \"%(name)s\" already set by hand: "
-"kept. im_livechat_ai answered this channel: %(answer)s."
-msgstr "%(date)s（UTC）發現已手動設定 AI 聯絡人「%(name)s」：保留。im_livechat_ai 原本回覆這個頻道：%(answer)s。"
-
-#. module: woow_ai_contact_livechat
-#: model:ir.model,name:woow_ai_contact_livechat.model_woow_ai_livechat_event
-msgid "AI Live Chat Conversation Event"
-msgstr "AI 線上客服對話事件"
-
-#. module: woow_ai_contact_livechat
-#: model:ir.model.fields.selection,name:woow_ai_contact_livechat.selection__woow_ai_livechat_event__kind__pause
-msgid "AI paused by an operator"
-msgstr "客服暫停 AI"
-
-#. module: woow_ai_contact_livechat
-#: model:ir.model.fields.selection,name:woow_ai_contact_livechat.selection__woow_ai_livechat_event__kind__resume
-msgid "AI resumed by an operator"
-msgstr "客服恢復 AI"
-
-#. module: woow_ai_contact_livechat
-#: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_event__channel_id
-msgid "Conversation"
-msgstr "對話"
-
-#. module: woow_ai_contact_livechat
-#: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_event__kind
-msgid "Event"
-msgstr "事件"
-
-#. module: woow_ai_contact_livechat
-#: model:ir.model.fields.selection,name:woow_ai_contact_livechat.selection__woow_ai_livechat_event__kind__handoff
-msgid "Handed over to a human"
-msgstr "已轉接真人客服"
-
-#. module: woow_ai_contact_livechat
-#: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_event__message_id
-msgid "Notice"
-msgstr "通知訊息"
-
-#. module: woow_ai_contact_livechat
-#: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_event__user_id
-msgid "Operator"
-msgstr "客服人員"
-
-#. module: woow_ai_contact_livechat
-#: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_event__minutes
-msgid "Pause (minutes)"
-msgstr "暫停（分鐘）"
-
-#. module: woow_ai_contact_livechat
-#: model:ir.model.fields.selection,name:woow_ai_contact_livechat.selection__woow_ai_livechat_event__kind__paused_notice
-msgid "Paused notice"
-msgstr "暫停提示"
-
-#. module: woow_ai_contact_livechat
-#: model:ir.model.fields,help:woow_ai_contact_livechat.field_woow_ai_livechat_event__message_id
-msgid "The notice the AI posted for this event (left out of the history)."
-msgstr "AI 為這個事件張貼的通知（不放進送給模型的歷史）。"
-
-#. module: woow_ai_contact_livechat
-#: model:ir.model.fields,field_description:woow_ai_contact_livechat.field_woow_ai_livechat_event__trigger_message_id
-msgid "Visitor Message"
-msgstr "訪客訊息"

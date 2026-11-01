@@ -61,6 +61,11 @@ msgid "AI Contact"
 msgstr "AI 聯絡人"
 
 #. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_discuss_channel__woow_ai_inactive_notice_sent
+msgid "AI Contact Archived Note Sent"
+msgstr "已告知 AI 聯絡人停用"
+
+#. module: woow_ai_contact
 #: model:ir.model,name:woow_ai_contact.model_woow_ai_call_log
 msgid "AI Contact Call Log"
 msgstr "AI 聯絡人呼叫紀錄"
@@ -506,7 +511,9 @@ msgid ""
 "Images are always sent inline. Documents are sent as they are (Odoo converts\n"
 "                                nothing) or as links; use \"Download links only\" for Hermes. n8n backends get every\n"
 "                                attachment as a signed download link (the workflow downloads it)."
-msgstr "圖片一律內嵌送出。文件以原檔送出（Odoo 不轉換）或只給連結；Hermes 請選「只給下載連結」。n8n 後端的每個附件都是簽名下載網址（由工作流程自行下載）。"
+msgstr ""
+"圖片一律內嵌送出。文件以原檔送出（Odoo 不轉換）或只給連結；Hermes 請選「只給下載連結」。n8n "
+"後端的每個附件都是簽名下載網址（由工作流程自行下載）。"
 
 #. module: woow_ai_contact
 #: model:ir.model.fields.selection,name:woow_ai_contact.selection__woow_ai_call_log__status__invalid_response
@@ -613,7 +620,9 @@ msgid ""
 "No signing secret: requests to n8n are not signed (fine for a public n8n "
 "Chat Trigger, which checks no signature). Set one when the workflow verifies"
 " X-Woow-Signature."
-msgstr "沒有簽章金鑰：送給 n8n 的請求不會簽章（公開的 n8n Chat Trigger 不驗簽章，可以這樣用）。工作流程有驗證 X-Woow-Signature 時再設定。"
+msgstr ""
+"沒有簽章金鑰：送給 n8n 的請求不會簽章（公開的 n8n Chat Trigger 不驗簽章，可以這樣用）。工作流程有驗證 X-Woow-"
+"Signature 時再設定。"
 
 #. module: woow_ai_contact
 #: model:ir.model.fields.selection,name:woow_ai_contact.selection__woow_ai_call_log__status__ok
@@ -630,6 +639,12 @@ msgstr "已建立私訊的使用者"
 #: code:addons/woow_ai_contact/models/ai_contact.py:0
 msgid "Only system administrators can change AI contact connections."
 msgstr "只有系統管理員可以變更 AI 聯絡人的連線設定。"
+
+#. module: woow_ai_contact
+#. odoo-python
+#: code:addons/woow_ai_contact/models/ai_contact.py:0
+msgid "Only system administrators can open the AI contacts."
+msgstr "只有系統管理員可以開啟 AI 聯絡人。"
 
 #. module: woow_ai_contact
 #: model:ir.model.fields.selection,name:woow_ai_contact.selection__woow_ai_call_log__backend_type__openai
@@ -650,7 +665,10 @@ msgid ""
 "Leave empty to keep the current key; the saved key is never shown again. "
 "Changing the endpoint host or the backend type removes the saved key, so it "
 "is never sent to another server: enter it again."
-msgstr "OpenAI 相容（必填）：以「Authorization: Bearer」送出。n8n（選填）：X-Woow-Signature HMAC 的簽章金鑰（不會送出）；沒有金鑰時請求不簽章，例如公開的 n8n Chat Trigger。留空則保留目前的金鑰；儲存後不會再顯示。變更後端主機或後端類型會移除已存的金鑰，避免送到別的伺服器：請重新輸入。"
+msgstr ""
+"OpenAI 相容（必填）：以「Authorization: Bearer」送出。n8n（選填）：X-Woow-Signature HMAC "
+"的簽章金鑰（不會送出）；沒有金鑰時請求不簽章，例如公開的 n8n Chat "
+"Trigger。留空則保留目前的金鑰；儲存後不會再顯示。變更後端主機或後端類型會移除已存的金鑰，避免送到別的伺服器：請重新輸入。"
 
 #. module: woow_ai_contact
 #: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_contact__model
@@ -679,7 +697,11 @@ msgid ""
 "links only\": a signed 1-hour link; use it for Hermes, which refuses file "
 "parts (HTTP 400) and whose agent can fetch the link itself. Images are "
 "always sent inline. Size limits: docs/PROTOCOL.md."
-msgstr "僅限 OpenAI 相容後端：使用者傳送的文件（PDF、docx、xlsx、xls、csv、txt、md、json）怎麼交給模型。「把檔案送給模型」：每個文件以原檔、帶自己的檔案類型送出（LiteLLM 與 OpenAI 讀得懂 PDF、Word、Excel）；Odoo 不做任何轉換。「只給下載連結」：1 小時有效的簽名網址；Hermes 請選這個（它對檔案內容回 HTTP 400，它的 agent 可以自己抓連結）。圖片一律內嵌送出。大小上限見 docs/PROTOCOL.md。"
+msgstr ""
+"僅限 OpenAI "
+"相容後端：使用者傳送的文件（PDF、docx、xlsx、xls、csv、txt、md、json）怎麼交給模型。「把檔案送給模型」：每個文件以原檔、帶自己的檔案類型送出（LiteLLM"
+" 與 OpenAI 讀得懂 PDF、Word、Excel）；Odoo 不做任何轉換。「只給下載連結」：1 小時有效的簽名網址；Hermes "
+"請選這個（它對檔案內容回 HTTP 400，它的 agent 可以自己抓連結）。圖片一律內嵌送出。大小上限見 docs/PROTOCOL.md。"
 
 #. module: woow_ai_contact
 #: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_contact__endpoint_url
@@ -687,7 +709,10 @@ msgid ""
 "OpenAI compatible: the base URL ending in /v1 (…/chat/completions is added)."
 " n8n: the full production webhook URL (a Chat Trigger: …/webhook/<id>/chat)."
 " Must be https, except localhost and *.svc.cluster.local."
-msgstr "OpenAI 相容：以 /v1 結尾的基本網址（系統會加上 …/chat/completions）。n8n：完整的正式 webhook 網址（Chat Trigger 是 …/webhook/<id>/chat）。必須使用 https，localhost 與 *.svc.cluster.local 除外。"
+msgstr ""
+"OpenAI 相容：以 /v1 結尾的基本網址（系統會加上 …/chat/completions）。n8n：完整的正式 webhook 網址（Chat "
+"Trigger 是 …/webhook/<id>/chat）。必須使用 https，localhost 與 *.svc.cluster.local "
+"除外。"
 
 #. module: woow_ai_contact
 #: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
@@ -708,7 +733,10 @@ msgid ""
 "Without a secret requests are not signed (e.g. a public n8n Chat Trigger). "
 "Leave empty to keep the current secret; use Remove API Key to stop signing. "
 "Changing the endpoint host or the backend type removes it."
-msgstr "選填。X-Woow-Signature HMAC 的金鑰（時間窗 300 秒），不會送給 n8n：請在工作流程中驗證簽章。沒有金鑰時請求不簽章（例如公開的 n8n Chat Trigger）。留空則保留目前的金鑰；要停止簽章請按「移除 API 金鑰」。變更後端主機或後端類型會移除金鑰。"
+msgstr ""
+"選填。X-Woow-Signature HMAC 的金鑰（時間窗 300 秒），不會送給 "
+"n8n：請在工作流程中驗證簽章。沒有金鑰時請求不簽章（例如公開的 n8n Chat Trigger）。留空則保留目前的金鑰；要停止簽章請按「移除 API"
+" 金鑰」。變更後端主機或後端類型會移除金鑰。"
 
 #. module: woow_ai_contact
 #: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
@@ -1024,6 +1052,18 @@ msgid "The timeout must be between 5 and 3600 seconds."
 msgstr "逾時秒數必須介於 5 到 3600 秒之間。"
 
 #. module: woow_ai_contact
+#: model:ir.model.fields,help:woow_ai_contact.field_discuss_channel__woow_ai_inactive_notice_sent
+msgid ""
+"The user of this direct chat was told once that its AI contact is archived."
+msgstr "已告知這個私訊的使用者：AI 聯絡人已停用（每段對話一次）。"
+
+#. module: woow_ai_contact
+#. odoo-python
+#: code:addons/woow_ai_contact/models/discuss_channel.py:0
+msgid "This AI contact is no longer available."
+msgstr "這個 AI 聯絡人已停用。"
+
+#. module: woow_ai_contact
 #: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_call_log_form
 #: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_call_log_list
 msgid "Time"
@@ -1050,7 +1090,9 @@ msgid ""
 "Total time allowed for one answer (5-3600 seconds). n8n: at most 90 seconds "
 "per call (Cloudflare cuts at about 100 seconds; long workflows answer "
 "{\"skip\": true} and push the reply later)."
-msgstr "一次回覆的總時限（5–3600 秒）。n8n：每次呼叫最多 90 秒（Cloudflare 約 100 秒會切斷；長流程請先回 {\"skip\": true}，再用推送 API 回覆）。"
+msgstr ""
+"一次回覆的總時限（5–3600 秒）。n8n：每次呼叫最多 90 秒（Cloudflare 約 100 秒會切斷；長流程請先回 {\"skip\": "
+"true}，再用推送 API 回覆）。"
 
 #. module: woow_ai_contact
 #: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_job__message_id
