@@ -98,15 +98,17 @@ class WoowAiContact(models.Model):
     endpoint_url = fields.Char(
         string='Endpoint URL', groups='base.group_system',
         help='OpenAI compatible: the base URL ending in /v1 (…/chat/completions is added). '
-             'n8n: the full webhook URL. Must be https, except localhost and *.svc.cluster.local.',
+             'n8n: the full production webhook URL (a Chat Trigger: …/webhook/<id>/chat). Must be https, '
+             'except localhost and *.svc.cluster.local.',
     )
     api_key = fields.Char(
         string='API Key', compute='_compute_api_key', inverse='_inverse_api_key',
         store=False, groups='base.group_system', copy=False,
-        help='OpenAI compatible: sent as "Authorization: Bearer". n8n: the signing secret of the '
-             'X-Woow-Signature HMAC (never sent). Leave empty to keep the current key; the saved key '
-             'is never shown again. Changing the endpoint host or the backend type removes the saved '
-             'key, so it is never sent to another server: enter it again.',
+        help='OpenAI compatible (required): sent as "Authorization: Bearer". n8n (optional): the signing '
+             'secret of the X-Woow-Signature HMAC (never sent); without one requests are not signed, e.g. '
+             'for a public n8n Chat Trigger. Leave empty to keep the current key; the saved key is never '
+             'shown again. Changing the endpoint host or the backend type removes the saved key, so it is '
+             'never sent to another server: enter it again.',
     )
     api_key_set = fields.Boolean(string='API Key Configured', compute='_compute_api_key',
                                  groups='base.group_system')
@@ -119,7 +121,9 @@ class WoowAiContact(models.Model):
                                  help='Most recent messages sent as context (1-200).')
     timeout_seconds = fields.Integer(string='Timeout (seconds)', default=DEFAULT_TIMEOUT,
                                      groups='base.group_system',
-                                     help='Total time allowed for one answer (5-3600 seconds).')
+                                     help='Total time allowed for one answer (5-3600 seconds). n8n: at most '
+                                          '90 seconds per call (Cloudflare cuts at about 100 seconds; long '
+                                          'workflows answer {"skip": true} and push the reply later).')
     openai_stream = fields.Boolean(
         string='Stream Replies', default=True, groups='base.group_system',
         help='OpenAI compatible backends only: ask for a streamed (SSE) answer. Bytes keep flowing while '

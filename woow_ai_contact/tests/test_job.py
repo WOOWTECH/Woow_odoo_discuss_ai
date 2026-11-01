@@ -349,7 +349,8 @@ class TestN8nJob(AiContactCase):
         self.assertNotIn(TEST_KEY, json.dumps(headers))
         self.assertNotIn(TEST_KEY.encode(), kwargs['data'])
         self.assertFalse(kwargs['stream'])
-        self.assertEqual(kwargs['timeout'], (10, 300))
+        # n8n: at most 90 s per call (im_livechat_ai 18.0.1.2.0; Cloudflare cuts at about 100 s)
+        self.assertEqual(kwargs['timeout'], (10, 90))
         expected = hmac.new(TEST_KEY.encode(), headers['X-Woow-Timestamp'].encode() + b'.' + kwargs['data'],
                             hashlib.sha256).hexdigest()
         self.assertEqual(headers['X-Woow-Signature'], 'sha256=%s' % expected)
@@ -368,6 +369,73 @@ class TestN8nJob(AiContactCase):
         self.assertTrue(att['expires_at'].endswith('Z'))
         self.assertEqual(body['history'], [])
         self.assertEqual(body['system_prompt'], '')
+        # n8n Chat Trigger fields, same names and values as im_livechat_ai 18.0.1.2.0
+        self.assertEqual(body['action'], 'sendMessage')
+        self.assertEqual(body['sessionId'], body['session_id'])
+        self.assertEqual(body['chatInput'], '報價單')
+
+    def test_chat_trigger_fields_keep_the_protocol(self):
+        chat = self.chat(self.portal, self.n8n)
+        self.post(chat, self.portal, 'q1')
+        with patch(BACKEND_POST, return_value=http_response(200, {'output': 'a1'})):
+            run(self.jobs(chat))
+        self.post(chat, self.portal, '客廳想做燈光自動化，預算 3 萬')
+        with patch(BACKEND_POST, return_value=http_response(200, {'output': 'a2'})) as post:
+            run(self.jobs(chat)[-1])
+        body = json.loads(post.call_args.kwargs['data'])
+        self.assertEqual(set(body), {'event', 'session_id', 'action', 'sessionId', 'chatInput', 'contact', 'user',
+                                     'channel', 'system_prompt', 'message', 'history', 'events'})
+        self.assertEqual((body['action'], body['sessionId'], body['chatInput']),
+                         ('sendMessage', self.env['woow.ai.contact']._session_id(chat), '客廳想做燈光自動化，預算 3 萬'))
+        self.assertEqual(body['chatInput'], body['message']['text'])
+        self.assertEqual([(h['role'], h['text']) for h in body['history']], [('user', 'q1'), ('assistant', 'a1')])
+
+    def test_timeout_capped_at_90_seconds(self):
+        self.n8n.timeout_seconds = 30
+        _chat, _job, post = self.run_n8n({'reply': 'ok'})
+        self.assertEqual(post.call_args.kwargs['timeout'], (10, 30))
+        self.n8n.timeout_seconds = 600
+        _chat, _job, post = self.run_n8n({'reply': 'ok'}, user=self.internal)
+        self.assertEqual(post.call_args.kwargs['timeout'], (10, 90))
+
+    def test_unsigned_without_signing_secret(self):
+        # a public n8n Chat Trigger checks no signature: no secret, no X-Woow-* headers
+        self.n8n.action_clear_api_key()
+        self.assertFalse(self.n8n.api_key_set)
+        chat, job, post = self.run_n8n({'output': '您好'}, text='你好')
+        self.assertEqual(job.state, 'done', job.error)
+        kwargs = post.call_args.kwargs
+        self.assertEqual(kwargs['headers'], {'Content-Type': 'application/json'})
+        self.assertFalse(kwargs['allow_redirects'])
+        self.assertEqual(json.loads(kwargs['data'])['chatInput'], '你好')
+        self.assertEqual(len(self.bot_messages(chat, self.n8n)), 1)
+
+    def test_output_answer_is_one_message(self):
+        text = '推薦 **智能燈光** 方案：[看方案](https://www.example.com/shop/lighting)'
+        for answer in ({'output': text}, [{'output': text}]):
+            chat, job, _post = self.run_n8n(answer)
+            self.assertEqual(job.state, 'done', job.error)
+            body = job.reply_message_id.body
+            self.assertIn('<strong>智能燈光</strong>', body)
+            self.assertIn('href="https://www.example.com/shop/lighting"', body)
+        self.assertEqual(len(self.bot_messages(chat, self.n8n)), 2)
+        # reply / replies / skip still win over output (same order as im_livechat_ai 18.0.1.2.0)
+        parse = self.env['woow.ai.contact']._n8n_replies
+        self.assertEqual(parse({'reply': 'r', 'output': 'o'}), ([{'text': 'r', 'attachments': []}], False))
+        self.assertEqual(parse({'replies': ['a', 'b'], 'output': 'o'})[0][1]['text'], 'b')
+        self.assertEqual(parse([{'output': 'o'}, {'output': 'ignored'}]), ([{'text': 'o', 'attachments': []}], False))
+        chat, job, _post = self.run_n8n({'skip': True, 'output': 'o'}, user=self.internal)
+        self.assertEqual(job.state, 'done')
+        self.assertFalse(job.reply_message_id)
+
+    def test_invalid_output_answers(self):
+        for answer, error in (({'output': 3}, "'output' is not a string"), ({'output': ''}, 'empty reply'),
+                              ({'output': '<think>only reasoning</think>'}, 'empty reply')):
+            chat, job, _post = self.run_n8n(answer)
+            self.assertEqual(job.state, 'failed', answer)
+            log = self.env['woow.ai.call.log'].search([('job_id', '=', job.id)])
+            self.assertEqual(log.status, 'invalid_response', answer)
+            self.assertIn(error, log.error)
 
     def test_reply_attachments(self):
         payload = {'reply': {

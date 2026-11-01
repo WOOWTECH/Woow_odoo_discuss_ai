@@ -322,7 +322,7 @@ class WoowAiLivechatMigration(models.AbstractModel):
         contact = channel.woow_ai_contact_id
         if not contact or not contact.active:
             raise UserError(self.env._('The channel has no active AI contact.'))
-        if not (contact.endpoint_url or '').strip() or not contact.api_key_set:
+        if not (contact.endpoint_url or '').strip() or (contact.backend_type == 'openai' and not contact.api_key_set):
             raise UserError(self.env._('Fill in the endpoint URL and the API key of the AI contact "%(name)s" first.',
                                        name=contact.name))
         cr = self.env.cr

@@ -95,9 +95,51 @@ class TestAiContact(AiContactCase):
         expected = hmac.new(TEST_KEY.encode(), headers['X-Woow-Timestamp'].encode() + b'.' + kwargs['data'],
                             hashlib.sha256).hexdigest()
         self.assertEqual(headers['X-Woow-Signature'], 'sha256=%s' % expected)
-        self.assertEqual(json.loads(kwargs['data'])['event'], 'ping')
+        # same ping as im_livechat_ai 18.0.1.2.0: a Chat Trigger answers loadPreviousSession without the agent
+        self.assertEqual(json.loads(kwargs['data']), {
+            'event': 'ping', 'contact': {'id': self.n8n.id, 'name': 'Workflow Bot'},
+            'action': 'loadPreviousSession', 'sessionId': 'woow-ai-ping-%s' % self.n8n.id,
+        })
+        self.assertFalse(kwargs['allow_redirects'])
         with patch(BACKEND_POST, return_value=http_response(401)):
             self.assertEqual(self.n8n.action_test_connection()['params']['type'], 'danger')
+
+    def test_n8n_contact_without_signing_secret(self):
+        # e.g. a public n8n Chat Trigger: the contact works without a secret, nothing is signed
+        contact = self.env['woow.ai.contact'].create({
+            'name': 'Smart Home Advisor', 'backend_type': 'n8n',
+            'endpoint_url': 'https://n8n.example.com/webhook/smart-home-advisor/chat',
+        })
+        self.assertFalse(contact.api_key_set)
+        with patch(BACKEND_POST, return_value=http_response(200, {'data': []})) as post:
+            params = contact.action_test_connection()['params']
+        self.assertEqual(params['type'], 'success', params['message'])
+        self.assertIn('200', params['message'])
+        args, kwargs = post.call_args
+        self.assertEqual(args[0], 'https://n8n.example.com/webhook/smart-home-advisor/chat')
+        self.assertEqual(kwargs['headers'], {'Content-Type': 'application/json'})
+        self.assertEqual(json.loads(kwargs['data']), {
+            'event': 'ping', 'contact': {'id': contact.id, 'name': 'Smart Home Advisor'},
+            'action': 'loadPreviousSession', 'sessionId': 'woow-ai-ping-%s' % contact.id,
+        })
+        # a chat with it is answered
+        chat = self.chat(self.internal, contact)
+        self.post(chat, self.internal, 'hello')
+        job = self.jobs(chat)[-1]
+        with patch(BACKEND_POST, return_value=http_response(200, [{'output': '您好！'}])) as post:
+            job._run_job(commit=False)
+        self.assertEqual(job.state, 'done', job.error)
+        self.assertEqual(post.call_args.kwargs['headers'], {'Content-Type': 'application/json'})
+        self.assertIn('您好！', job.reply_message_id.body)
+        # without an endpoint nothing is sent
+        contact.endpoint_url = False
+        with patch(BACKEND_POST) as post:
+            params = contact.action_test_connection()['params']
+        post.assert_not_called()
+        self.assertEqual(params['type'], 'danger')
+        # the form shows Test Connection for an n8n contact without a secret, never for openai without a key
+        arch = self.env['woow.ai.contact'].get_view(view_type='form')['arch']
+        self.assertIn("(backend_type == 'openai' and not api_key_set)", arch)
 
     def test_test_connection_admin_only(self):
         with self.assertRaises(AccessError):

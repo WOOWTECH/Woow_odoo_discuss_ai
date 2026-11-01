@@ -3,6 +3,12 @@
 
 See docs/PROTOCOL.md for the wire format. No transaction is open during the
 HTTP call: the caller passes ``before_call`` (the job commits there).
+
+The n8n request and answers are the same as im_livechat_ai 18.0.1.2.0, so one
+n8n workflow serves both modules: the body also carries the n8n Chat Trigger
+fields (``action``, ``sessionId``, ``chatInput``), the answer may be the AI
+Agent's ``output``, the signing secret is optional (empty: nothing is signed,
+e.g. for a public Chat Trigger) and a call waits at most 90 s.
 """
 
 import base64
@@ -43,6 +49,7 @@ CONNECT_TIMEOUT = 10
 STREAM_IDLE_TIMEOUT = 30  # seconds without any byte from a streamed answer
 RETRY_WAITS = (3, 10)  # seconds before the 1st / 2nd retry
 RETRY_HTTP_STATUSES = (429, 503)
+N8N_MAX_TIMEOUT = 90  # seconds per n8n call, as im_livechat_ai 18.0.1.2.0 (Cloudflare cuts at about 100 s)
 TEST_TIMEOUT = 15
 MAX_LOG_PAYLOAD = 200000  # characters
 MAX_ERROR_LENGTH = 300
@@ -554,7 +561,7 @@ class WoowAiContactBackend(models.Model):
         contact = self.sudo()
         api_key = contact._get_api_key()
         endpoint = (contact.endpoint_url or '').strip()
-        if not endpoint or not api_key:
+        if not endpoint or (contact.backend_type == 'openai' and not api_key):
             raise BackendError('error', 'backend not configured (endpoint URL or API key missing)')
         base_url = channel.get_base_url()
         session_id = self._session_id(channel)
@@ -579,15 +586,21 @@ class WoowAiContactBackend(models.Model):
                 headers['Accept'] = 'text/event-stream'
             body = _json_dumps(payload).encode()
         else:
-            # n8n: the API key is only the signing secret, never sent (n8n
-            # stores the webhook headers of every execution)
+            # n8n: the API key is only the optional signing secret, never sent
+            # (n8n stores the webhook headers of every execution); without one
+            # (e.g. a public Chat Trigger) the request is not signed
             url = endpoint
             payload = contact._n8n_payload(channel, history, identity, session_id, base_url, trigger_message)
             body = _json_dumps(payload).encode()
-            headers.update(_signature_headers(api_key, body))
+            if api_key:
+                headers.update(_signature_headers(api_key, body))
         return url, headers, body, payload
 
     def _n8n_payload(self, channel, history, identity, session_id, base_url, trigger_message=None):
+        """n8n webhook body (docs/PROTOCOL.md), plus the fields an n8n Chat
+        Trigger reads (``action``, ``sessionId``, ``chatInput``: same names
+        and values as im_livechat_ai 18.0.1.2.0); a Webhook-node workflow
+        ignores them."""
         self.ensure_one()
         contact = self.sudo()
 
@@ -611,6 +624,10 @@ class WoowAiContactBackend(models.Model):
         return {
             'event': 'message',
             'session_id': session_id,
+            # n8n Chat Trigger ("hosted chat") aliases
+            'action': 'sendMessage',
+            'sessionId': session_id,
+            'chatInput': message['text'],
             'contact': {'id': contact.id, 'name': contact.name},
             'user': identity,
             'channel': channel._woow_ai_channel_info(contact),
@@ -733,7 +750,12 @@ class WoowAiContactBackend(models.Model):
 
     @staticmethod
     def _n8n_replies(data):
-        """n8n JSON -> (replies, skip)."""
+        """n8n JSON -> (replies, skip).
+
+        Accepted (as im_livechat_ai 18.0.1.2.0): ``{"skip": true}``,
+        ``{"replies": [...]}``, ``{"reply": {...}}`` / ``{"reply": "text"}``,
+        the n8n AI Agent / Chat Trigger answer ``{"output": "text"}`` (one
+        message), each also as an n8n item list ``[{...}]`` (first item)."""
         if isinstance(data, list) and data and isinstance(data[0], dict):
             data = data[0]  # "Respond to Webhook" with all incoming items
         if not isinstance(data, dict):
@@ -746,8 +768,12 @@ class WoowAiContactBackend(models.Model):
                 raise BackendError('invalid_response', "invalid response: 'replies' is not a list")
         elif 'reply' in data:
             raw = [data['reply']]
+        elif 'output' in data:
+            if not isinstance(data['output'], str):
+                raise BackendError('invalid_response', "invalid response: 'output' is not a string")
+            raw = [data['output']]
         else:
-            raise BackendError('invalid_response', "invalid response: no 'reply', 'replies' or 'skip'")
+            raise BackendError('invalid_response', "invalid response: no 'reply', 'replies', 'skip' or 'output'")
         replies = []
         for item in raw[:MAX_REPLIES]:
             if isinstance(item, str):
@@ -825,6 +851,8 @@ class WoowAiContactBackend(models.Model):
             log['request'] = payload
             total_timeout = contact.timeout_seconds or 300
             backend_type = contact.backend_type
+            if backend_type == 'n8n':
+                total_timeout = min(total_timeout, N8N_MAX_TIMEOUT)
             stream = backend_type == 'openai' and bool(payload.get('stream'))
             max_retries = contact.max_retries
             contact_id = contact.id
@@ -901,9 +929,13 @@ class WoowAiContactBackend(models.Model):
 
     def action_test_connection(self):
         """Check the backend without running the AI: openai ``GET {endpoint}/models``
-        (a chat completion would run a Hermes agent and its tools); n8n a signed
-        ``{"event": "ping"}`` (any HTTP 200 is a success). Only the HTTP status
-        and a short sentence are shown, never the upstream answer."""
+        (a chat completion would run a Hermes agent and its tools); n8n the
+        ping of im_livechat_ai 18.0.1.2.0, ``{"event": "ping", "contact": …,
+        "action": "loadPreviousSession", "sessionId": "woow-ai-ping-<id>"}``,
+        signed only when a signing secret is set (a Chat Trigger answers
+        loadPreviousSession without running the agent; any HTTP 200 is a
+        success). Only the HTTP status and a short sentence are shown, never
+        the upstream answer."""
         self.ensure_one()
         self._check_admin()
         contact = self.sudo()
@@ -911,7 +943,9 @@ class WoowAiContactBackend(models.Model):
         api_key = contact._get_api_key()
         endpoint = (contact.endpoint_url or '').strip()
         status = None
-        if not endpoint or not api_key:
+        if not endpoint and contact.backend_type == 'n8n':
+            message, ok = _('Set the endpoint URL first.'), False
+        elif not endpoint or (contact.backend_type == 'openai' and not api_key):
             message, ok = _('Set the endpoint URL and the API key first.'), False
         else:
             try:
@@ -920,8 +954,15 @@ class WoowAiContactBackend(models.Model):
                                             headers={'Authorization': 'Bearer %s' % api_key},
                                             timeout=(CONNECT_TIMEOUT, TEST_TIMEOUT), allow_redirects=False)
                 else:
-                    body = _json_dumps({'event': 'ping', 'contact': {'id': contact.id, 'name': contact.name}}).encode()
-                    headers = {'Content-Type': 'application/json', **_signature_headers(api_key, body)}
+                    body = _json_dumps({
+                        'event': 'ping',
+                        'contact': {'id': contact.id, 'name': contact.name or ''},
+                        'action': 'loadPreviousSession',
+                        'sessionId': 'woow-ai-ping-%s' % contact.id,
+                    }).encode()
+                    headers = {'Content-Type': 'application/json'}
+                    if api_key:
+                        headers.update(_signature_headers(api_key, body))
                     response = requests.post(endpoint, data=body, headers=headers,
                                              timeout=(CONNECT_TIMEOUT, TEST_TIMEOUT), allow_redirects=False)
                 status = response.status_code

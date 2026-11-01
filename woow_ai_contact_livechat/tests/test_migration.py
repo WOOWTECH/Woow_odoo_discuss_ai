@@ -144,6 +144,16 @@ class TestMigration(LivechatCase):
         with self.assertRaises(UserError):
             self._switch(self.chan_a)
 
+    def test_switch_to_n8n_contact_without_signing_secret(self):
+        # an n8n contact needs no signing secret (e.g. a public Chat Trigger); openai still needs its key
+        self.Migration._prepare()
+        contact = self.chan_a.woow_ai_contact_id
+        contact.write({'backend_type': 'n8n', 'endpoint_url': 'https://n8n.example.com/webhook/advisor/chat'})
+        self.assertFalse(contact.api_key_set)  # the openai key never becomes an n8n secret
+        self._switch(self.chan_a)
+        self.assertEqual(self.chan_a.woow_ai_migration_state, 'switched')
+        self.assertTrue(self.chan_a.woow_ai_enabled)
+
     # --- coexistence ---
 
     def test_coexistence_never_two_answers(self):

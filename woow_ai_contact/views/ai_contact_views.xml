@@ -33,7 +33,8 @@
                             invisible="not api_key_set" class="btn-secondary"
                             confirm="Remove the saved backend API key?"/>
                     <button name="action_test_connection" type="object" string="Test Connection"
-                            invisible="not id or not endpoint_url or not api_key_set" class="btn-secondary"/>
+                            invisible="not id or not endpoint_url or (backend_type == 'openai' and not api_key_set)"
+                            class="btn-secondary"/>
                 </header>
                 <sheet>
                     <div class="oe_button_box" name="button_box" groups="base.group_system">
@@ -57,8 +58,11 @@
                     </group>
                     <notebook groups="base.group_system">
                         <page string="Backend" name="backend">
-                            <div class="alert alert-warning" role="alert" invisible="api_key_set or not id">
+                            <div class="alert alert-warning" role="alert" invisible="api_key_set or not id or backend_type == 'n8n'">
                                 No API key is saved. Changing the endpoint host or the backend type removes the saved key, so it is never sent to another server: enter the key again.
+                            </div>
+                            <div class="alert alert-info" role="status" invisible="api_key_set or backend_type != 'n8n'">
+                                No signing secret: requests to n8n are not signed (fine for a public n8n Chat Trigger, which checks no signature). Set one when the workflow verifies X-Woow-Signature.
                             </div>
                             <group>
                                 <group>
@@ -69,8 +73,8 @@
                                            placeholder="Leave empty to keep the current key"/>
                                     <field name="api_key" string="Signing Secret" password="True"
                                            invisible="backend_type != 'n8n'"
-                                           help="Secret of the X-Woow-Signature HMAC (timestamp window 300 seconds). It is never sent to n8n: verify the signature in the workflow. Leave empty to keep the current secret. Changing the endpoint host or the backend type removes it."
-                                           placeholder="Leave empty to keep the current secret"/>
+                                           help="Optional. Secret of the X-Woow-Signature HMAC (timestamp window 300 seconds). It is never sent to n8n: verify the signature in the workflow. Without a secret requests are not signed (e.g. a public n8n Chat Trigger). Leave empty to keep the current secret; use Remove API Key to stop signing. Changing the endpoint host or the backend type removes it."
+                                           placeholder="Optional. Leave empty to keep the current secret"/>
                                     <field name="api_key_set"/>
                                     <field name="model" invisible="backend_type != 'openai'"
                                            placeholder="Empty: backend default"/>
