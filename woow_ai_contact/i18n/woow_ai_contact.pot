@@ -6,8 +6,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Odoo Server 18.0-20250807\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-01 07:35+0000\n"
-"PO-Revision-Date: 2026-11-01 07:35+0000\n"
+"POT-Creation-Date: 2026-11-01 08:51+0000\n"
+"PO-Revision-Date: 2026-11-01 08:51+0000\n"
 "Last-Translator: \n"
 "Language-Team: \n"
 "MIME-Version: 1.0\n"
@@ -501,8 +501,9 @@ msgstr ""
 #. module: woow_ai_contact
 #: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
 msgid ""
-"Images are always sent inline. n8n backends get every attachment as a signed\n"
-"                                download link (the workflow downloads it)."
+"Images are always sent inline. Documents are sent as they are (Odoo converts\n"
+"                                nothing) or as links; use \"Download links only\" for Hermes. n8n backends get every\n"
+"                                attachment as a signed download link (the workflow downloads it)."
 msgstr ""
 
 #. module: woow_ai_contact
@@ -549,11 +550,6 @@ msgstr ""
 #. module: woow_ai_contact
 #: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
 msgid "Leave empty to keep the current key"
-msgstr ""
-
-#. module: woow_ai_contact
-#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
-msgid "Leave empty to keep the current secret"
 msgstr ""
 
 #. module: woow_ai_contact
@@ -608,6 +604,14 @@ msgid ""
 msgstr ""
 
 #. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid ""
+"No signing secret: requests to n8n are not signed (fine for a public n8n "
+"Chat Trigger, which checks no signature). Set one when the workflow verifies"
+" X-Woow-Signature."
+msgstr ""
+
+#. module: woow_ai_contact
 #: model:ir.model.fields.selection,name:woow_ai_contact.selection__woow_ai_call_log__status__ok
 msgid "OK"
 msgstr ""
@@ -634,6 +638,17 @@ msgid "OpenAI compatible (Hermes, LiteLLM)"
 msgstr ""
 
 #. module: woow_ai_contact
+#: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_contact__api_key
+msgid ""
+"OpenAI compatible (required): sent as \"Authorization: Bearer\". n8n "
+"(optional): the signing secret of the X-Woow-Signature HMAC (never sent); "
+"without one requests are not signed, e.g. for a public n8n Chat Trigger. "
+"Leave empty to keep the current key; the saved key is never shown again. "
+"Changing the endpoint host or the backend type removes the saved key, so it "
+"is never sent to another server: enter it again."
+msgstr ""
+
+#. module: woow_ai_contact
 #: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_contact__model
 msgid ""
 "OpenAI compatible backends only. Leave empty to use the backend default."
@@ -651,32 +666,26 @@ msgstr ""
 #. module: woow_ai_contact
 #: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_contact__document_mode
 msgid ""
-"OpenAI compatible backends only: how the documents users send (PDF, xlsx, "
-"xls, docx, csv, txt, md, json) reach the model; models do not open download "
-"links. \"PDF as a file\": PDFs are sent as file parts (LiteLLM and OpenAI "
-"read them), other documents as text read by Odoo. \"Text\": Odoo reads the "
-"text of every document, PDFs included (use it for Hermes and other servers "
-"that do not accept file parts; scanned PDFs without a text layer give no "
-"text). \"Download links only\": a signed 1-hour link, as before (the backend"
-" must download it itself). Size limits: docs/PROTOCOL.md."
-msgstr ""
-
-#. module: woow_ai_contact
-#: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_contact__api_key
-msgid ""
-"OpenAI compatible: sent as \"Authorization: Bearer\". n8n: the signing "
-"secret of the X-Woow-Signature HMAC (never sent). Leave empty to keep the "
-"current key; the saved key is never shown again. Changing the endpoint host "
-"or the backend type removes the saved key, so it is never sent to another "
-"server: enter it again."
+"OpenAI compatible backends only: how the documents users send (PDF, docx, "
+"xlsx, xls, csv, txt, md, json) reach the model. \"Send the files\": each "
+"document is sent as it is, as a file part with its own type (LiteLLM and "
+"OpenAI read PDF, Word and Excel files); Odoo converts nothing. \"Download "
+"links only\": a signed 1-hour link; use it for Hermes, which refuses file "
+"parts (HTTP 400) and whose agent can fetch the link itself. Images are "
+"always sent inline. Size limits: docs/PROTOCOL.md."
 msgstr ""
 
 #. module: woow_ai_contact
 #: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_contact__endpoint_url
 msgid ""
 "OpenAI compatible: the base URL ending in /v1 (…/chat/completions is added)."
-" n8n: the full webhook URL. Must be https, except localhost and "
-"*.svc.cluster.local."
+" n8n: the full production webhook URL (a Chat Trigger: …/webhook/<id>/chat)."
+" Must be https, except localhost and *.svc.cluster.local."
+msgstr ""
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid "Optional. Leave empty to keep the current secret"
 msgstr ""
 
 #. module: woow_ai_contact
@@ -686,8 +695,13 @@ msgid "Optional. Leave empty to let the backend decide the role."
 msgstr ""
 
 #. module: woow_ai_contact
-#: model:ir.model.fields.selection,name:woow_ai_contact.selection__woow_ai_contact__document_mode__file
-msgid "PDF as a file, other documents as text"
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid ""
+"Optional. Secret of the X-Woow-Signature HMAC (timestamp window 300 "
+"seconds). It is never sent to n8n: verify the signature in the workflow. "
+"Without a secret requests are not signed (e.g. a public n8n Chat Trigger). "
+"Leave empty to keep the current secret; use Remove API Key to stop signing. "
+"Changing the endpoint host or the backend type removes it."
 msgstr ""
 
 #. module: woow_ai_contact
@@ -866,12 +880,8 @@ msgid "Runs"
 msgstr ""
 
 #. module: woow_ai_contact
-#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
-msgid ""
-"Secret of the X-Woow-Signature HMAC (timestamp window 300 seconds). It is "
-"never sent to n8n: verify the signature in the workflow. Leave empty to keep"
-" the current secret. Changing the endpoint host or the backend type removes "
-"it."
+#: model:ir.model.fields.selection,name:woow_ai_contact.selection__woow_ai_contact__document_mode__file
+msgid "Send the files to the model"
 msgstr ""
 
 #. module: woow_ai_contact
@@ -883,6 +893,12 @@ msgstr ""
 #. odoo-python
 #: code:addons/woow_ai_contact/models/ai_contact_backend.py:0
 msgid "Set the endpoint URL and the API key first."
+msgstr ""
+
+#. module: woow_ai_contact
+#. odoo-python
+#: code:addons/woow_ai_contact/models/ai_contact_backend.py:0
+msgid "Set the endpoint URL first."
 msgstr ""
 
 #. module: woow_ai_contact
@@ -940,11 +956,6 @@ msgstr ""
 #: code:addons/woow_ai_contact/models/ai_contact_backend.py:0
 #: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
 msgid "Test Connection"
-msgstr ""
-
-#. module: woow_ai_contact
-#: model:ir.model.fields.selection,name:woow_ai_contact.selection__woow_ai_contact__document_mode__text
-msgid "Text extracted from every document"
 msgstr ""
 
 #. module: woow_ai_contact
@@ -1023,7 +1034,10 @@ msgstr ""
 
 #. module: woow_ai_contact
 #: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_contact__timeout_seconds
-msgid "Total time allowed for one answer (5-3600 seconds)."
+msgid ""
+"Total time allowed for one answer (5-3600 seconds). n8n: at most 90 seconds "
+"per call (Cloudflare cuts at about 100 seconds; long workflows answer "
+"{\"skip\": true} and push the reply later)."
 msgstr ""
 
 #. module: woow_ai_contact
