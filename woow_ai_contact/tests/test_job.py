@@ -145,6 +145,41 @@ class TestOpenAiJob(AiContactCase):
         self.assertTrue(media.check_token(self.env['woow.ai.contact']._signing_secret(),
                                           pdf.id, pdf.checksum, token))
 
+    def test_attachments_in_upload_order(self):
+        # QA B04: two images in one message (red first, blue second, as the chat shows them) reached the
+        # model reversed (ir.attachment's default order is id desc): every list follows the upload order
+        import io
+        from PIL import Image
+
+        def png(color):
+            buffer = io.BytesIO()
+            Image.new('RGB', (2, 2), color).save(buffer, format='PNG')
+            return buffer.getvalue()
+
+        red, blue = png('red'), png('blue')
+        chat = self.chat(self.internal)
+        atts = (self.attachment(chat, self.internal, name='red.png', raw=red)
+                | self.attachment(chat, self.internal, name='blue.png', raw=blue)
+                | self.attachment(chat, self.internal, name='a.zip', raw=b'PK\x05\x06' + b'\0' * 18)
+                | self.attachment(chat, self.internal, name='b.zip', raw=b'PK\x05\x06' + b'\0' * 18))
+        self.post(chat, self.internal, '兩張圖', attachments=atts)
+        with patch(BACKEND_POST, return_value=openai_ok()) as post:
+            run(self.jobs(chat)[-1])
+        content = json.loads(post.call_args.kwargs['data'])['messages'][-1]['content']
+        images = [part['image_url']['url'] for part in content if part['type'] == 'image_url']
+        self.assertEqual(images, ['data:image/png;base64,' + base64.b64encode(raw).decode() for raw in (red, blue)])
+        text = content[0]['text']
+        self.assertLess(text.index('[附件] a.zip'), text.index('[附件] b.zip'))
+        # n8n: message.attachments in the same order
+        chat2 = self.chat(self.internal, self.n8n)
+        atts2 = (self.attachment(chat2, self.internal, name='red.png', raw=red)
+                 | self.attachment(chat2, self.internal, name='blue.png', raw=blue))
+        self.post(chat2, self.internal, '兩張圖', attachments=atts2)
+        with patch(BACKEND_POST, return_value=http_response(200, {'reply': 'ok'})) as post:
+            run(self.jobs(chat2)[-1])
+        body = json.loads(post.call_args.kwargs['data'])
+        self.assertEqual([a['name'] for a in body['message']['attachments']], ['red.png', 'blue.png'])
+
     def test_rapid_messages_one_reply(self):
         chat = self.chat(self.internal)
         for text in ('1', '2', '3'):

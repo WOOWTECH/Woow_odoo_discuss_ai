@@ -232,7 +232,8 @@ class DiscussChannel(models.Model):
             text = html_to_text(message.body)
             if len(text) > MAX_MESSAGE_TEXT:
                 text = text[:MAX_MESSAGE_TEXT] + TRUNCATED_MARKER
-            attachments = message.sudo().attachment_ids.with_prefetch(prefetch)
+            # in upload order, as the chat shows them (ir.attachment's default order is id desc)
+            attachments = message.sudo().attachment_ids.sorted('id').with_prefetch(prefetch)
             if not text and not attachments:
                 continue
             history.append({
