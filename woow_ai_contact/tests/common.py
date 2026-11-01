@@ -11,6 +11,7 @@ from unittest.mock import MagicMock
 import requests
 from urllib3.exceptions import MaxRetryError, NewConnectionError, ProtocolError
 
+from odoo import Command
 from odoo.tests.common import TransactionCase, new_test_user
 
 BACKEND_POST = 'odoo.addons.woow_ai_contact.models.ai_contact_backend.requests.post'
@@ -199,11 +200,13 @@ class AiContactCase(TransactionCase):
             'api_key': TEST_KEY,
             'model': 'test-model',
             'system_prompt': 'You are helpful.',
+            'allowed_group_ids': [Command.set([cls.env.ref('base.group_user').id, cls.env.ref('base.group_portal').id])],
             'download_domains': 'files.example.com\n*.cdn.example.com',
         })
         cls.n8n = cls.env['woow.ai.contact'].create({
             'name': 'Workflow Bot',
             'backend_type': 'n8n',
+            'allowed_group_ids': [Command.set([cls.env.ref('base.group_user').id, cls.env.ref('base.group_portal').id])],
             'endpoint_url': 'https://n8n.example.com/webhook/abc',
             'api_key': TEST_KEY,
             'download_domains': 'files.example.com',

@@ -29,6 +29,7 @@ class TestAiContactHttp(HttpCase):
             'endpoint_url': 'https://llm.example.com/v1',
             'api_key': TEST_KEY,
             'welcome_message': '歡迎使用',
+            'allowed_group_ids': [Command.set([cls.env.ref('base.group_user').id, cls.env.ref('base.group_portal').id])],
             'download_domains': 'files.example.com',
         })
         cls.Job = cls.env['woow.ai.job']

@@ -172,6 +172,7 @@
         <field name="name">AI Contacts</field>
         <field name="res_model">woow.ai.contact</field>
         <field name="view_mode">list,form</field>
+        <field name="groups_id" eval="[Command.set([ref('base.group_system')])]"/>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">Create an AI contact</p>
             <p>Users chat with AI contacts in Discuss; each one is connected to an OpenAI compatible backend

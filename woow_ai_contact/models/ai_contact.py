@@ -187,12 +187,8 @@ class WoowAiContact(models.Model):
 
     @api.model
     def _default_allowed_groups(self):
-        groups = self.env['res.groups']
-        for xmlid in ('base.group_user', 'base.group_portal'):
-            group = self.env.ref(xmlid, raise_if_not_found=False)
-            if group:
-                groups |= group
-        return groups
+        """Internal users only (QA C): administrators add portal users explicitly."""
+        return self.env.ref('base.group_user', raise_if_not_found=False) or self.env['res.groups']
 
     # --- API key (write-only) ---
 
@@ -240,6 +236,37 @@ class WoowAiContact(models.Model):
     def _check_admin(self):
         if not self.env.su and not self.env.user.has_group('base.group_system'):
             raise AccessError(self.env._('Only system administrators can change AI contact connections.'))
+
+    # --- List / form (QA C: the action opened by URL by any internal user) ---
+
+    @api.model
+    def _woow_ai_ui_allowed(self):
+        """True when the current user may open the AI contact list and form
+        (the web client's reads). Core: system administrators. Users chat with
+        AI contacts through Discuss and the portal, which never read them
+        through these methods; bridges may allow more (Live Chat managers
+        pick the AI contact of a channel)."""
+        return self.env.su or self.env.user.has_group('base.group_system')
+
+    def _woow_ai_check_ui(self):
+        if not self._woow_ai_ui_allowed():
+            raise AccessError(self.env._('Only system administrators can open the AI contacts.'))
+
+    @api.model
+    def web_search_read(self, domain, specification, offset=0, limit=None, order=None, count_limit=None):
+        self._woow_ai_check_ui()
+        return super().web_search_read(domain, specification, offset=offset, limit=limit, order=order,
+                                       count_limit=count_limit)
+
+    def web_read(self, specification):
+        self._woow_ai_check_ui()
+        return super().web_read(specification)
+
+    @api.model
+    def web_read_group(self, domain, fields, groupby, limit=None, offset=0, orderby=False, lazy=True):
+        self._woow_ai_check_ui()
+        return super().web_read_group(domain, fields, groupby, limit=limit, offset=offset, orderby=orderby,
+                                      lazy=lazy)
 
     # --- Constraints ---
 
@@ -350,6 +377,12 @@ class WoowAiContact(models.Model):
             self.env['woow.ai.call.log'].sudo()._erase_payloads(self.ids)
         if {'active', 'allowed_group_ids'} & set(vals):
             self._sync_partner_active()
+        if vals.get('active'):
+            # archived again later: its chats get the archived note once more
+            chats = self.env['discuss.channel'].sudo().search([
+                ('channel_type', '=', 'chat'), ('woow_ai_inactive_notice_sent', '=', True),
+                ('channel_member_ids.partner_id', 'in', self.sudo().partner_id.ids)])
+            chats.write({'woow_ai_inactive_notice_sent': False})
         if {'active', 'timeout_seconds'} & set(vals):
             self.env['woow.ai.job']._runner_cache_clear()
         return res

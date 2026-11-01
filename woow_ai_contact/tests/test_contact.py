@@ -151,8 +151,33 @@ class TestAiContact(AiContactCase):
         self.assertEqual(params['type'], 'danger')
 
     def test_default_groups(self):
+        # QA C: internal users only by default; administrators add portal users explicitly
+        contact = self.env['woow.ai.contact'].create({'name': 'New helper'})
+        self.assertEqual(contact.allowed_group_ids, self.env.ref('base.group_user'))
+        self.assertFalse(contact._user_allowed(self.portal))
+        self.assertTrue(contact._user_allowed(self.internal))
+        # existing contacts keep what they have
         self.assertEqual(set(self.contact.allowed_group_ids.ids),
                          {self.env.ref('base.group_user').id, self.env.ref('base.group_portal').id})
+
+    def test_list_and_form_for_administrators_only(self):
+        # QA C: the window action opened by URL showed names and descriptions to every internal user
+        action = self.env.ref('woow_ai_contact.action_woow_ai_contact')
+        self.assertEqual(action.groups_id, self.env.ref('base.group_system'))
+        spec = {'name': {}, 'description': {}}
+        for user in (self.internal, self.portal):
+            Contact = self.env['woow.ai.contact'].with_user(user)
+            with self.assertRaises(AccessError):
+                Contact.web_search_read([], spec)
+            with self.assertRaises(AccessError):
+                self.contact.with_user(user).web_read(spec)
+            with self.assertRaises(AccessError):
+                Contact.web_read_group([], ['name'], ['backend_type'])
+            # chatting still works: Discuss and the portal read through the ORM
+            self.assertIn(self.contact, Contact._contacts_for_user(user))
+        admin = new_test_user(self.env, 'ai_admin_ui', groups='base.group_user,base.group_system')
+        rows = self.env['woow.ai.contact'].with_user(admin).web_search_read([('id', '=', self.contact.id)], spec)
+        self.assertEqual(rows['records'][0]['name'], 'Product Advisor')
 
     def test_api_key_write_only(self):
         self.assertEqual(self.contact._get_api_key(), TEST_KEY)

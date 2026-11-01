@@ -23,6 +23,19 @@ class TestAccess(LivechatCase):
         with self.assertRaises(AccessError):
             Contact.browse(self.contact.id).write({'name': 'renamed'})
 
+    def test_contact_list_for_managers_not_operators(self):
+        # QA C: the AI contact list / form is for administrators; Live Chat managers pick a channel's contact
+        spec = {'name': {}}
+        rows = self.env['woow.ai.contact'].with_user(self.manager_user).web_search_read(
+            [('id', '=', self.contact.id)], spec)
+        self.assertEqual(rows['records'][0]['name'], 'AI 客服助理')
+        with self.assertRaises(AccessError):
+            self.env['woow.ai.contact'].with_user(self.operator_user).web_search_read([], spec)
+        # the channel form still shows the chosen contact's name to managers
+        values = self.livechat.with_user(self.manager_user).web_read(
+            {'woow_ai_contact_id': {'fields': {'display_name': {}}}})
+        self.assertEqual(values[0]['woow_ai_contact_id']['display_name'], 'AI 客服助理')
+
     def test_manager_configures_the_channel(self):
         other = self.env['woow.ai.contact'].create({'name': 'Other', 'endpoint_url': 'https://o.example.com/v1'})
         channel = self.livechat.with_user(self.manager_user)

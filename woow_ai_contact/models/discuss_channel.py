@@ -46,6 +46,10 @@ def html_to_text(body):
 class DiscussChannel(models.Model):
     _inherit = 'discuss.channel'
 
+    woow_ai_inactive_notice_sent = fields.Boolean(
+        string='AI Contact Archived Note Sent', readonly=True, copy=False,
+        help='The user of this direct chat was told once that its AI contact is archived.')
+
     # --- Hooks (override in bridges) ---
 
     def _woow_ai_channel_contact(self):
@@ -194,9 +198,10 @@ class DiscussChannel(models.Model):
         if message.message_type != 'comment' or message.model != 'discuss.channel':
             return False
         contact = self._woow_ai_channel_contact()
-        if not contact or not contact.active:
-            return False
         if not html_to_text(message.body) and not message.attachment_ids:
+            return False
+        if not contact or not contact.active:
+            self._woow_ai_inactive_note(message)
             return False
         check = self._woow_ai_check_author(contact, message)
         if check == AUTHOR_IGNORE:
@@ -208,6 +213,24 @@ class DiscussChannel(models.Model):
         if not kind or self._woow_ai_is_paused():
             return False
         return self.env['woow.ai.job']._create_for_message(self, contact, message, kind=kind)
+
+    def _woow_ai_inactive_note(self, message):
+        """A person writes in the direct chat of an archived AI contact: one
+        fixed note per conversation instead of silence (QA C), no backend
+        call. Only direct chats (Live Chat answers with its own rules)."""
+        self.ensure_one()
+        if self.channel_type != 'chat' or self.woow_ai_inactive_notice_sent:
+            return
+        partners = self.channel_member_ids.partner_id
+        contact = self.env['woow.ai.contact'].sudo()._contact_for_partners(partners.ids)
+        author = message.author_id
+        if not contact or contact.active or not author or author == contact.partner_id:
+            return
+        if not author.sudo().with_context(active_test=False).user_ids:
+            return
+        self.woow_ai_inactive_notice_sent = True
+        lang = self.env['woow.ai.contact']._installed_lang(author.sudo().lang)
+        contact._post_text(self, self.with_context(lang=lang).env._('This AI contact is no longer available.'))
 
     def _woow_ai_refusal_text(self, message):
         lang = self.env['woow.ai.contact']._installed_lang(message.author_id.sudo().lang)

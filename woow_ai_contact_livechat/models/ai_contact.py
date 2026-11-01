@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from odoo import fields, models
+from odoo import api, fields, models
 
 from .discuss_channel import HANDOFF_SYSTEM_LINE
 
@@ -12,6 +12,11 @@ class WoowAiContact(models.Model):
         groups='base.group_system',
         help='Live Chat channels that chose this AI contact. Their visitors (often anonymous) reach '
              'its backend: give it public data tools only.')
+
+    @api.model
+    def _woow_ai_ui_allowed(self):
+        # Live Chat managers pick a channel's AI contact (names only: record rule, field groups)
+        return super()._woow_ai_ui_allowed() or self.env.user.has_group('im_livechat.im_livechat_group_manager')
 
     def _openai_messages(self, channel, history, identity, base_url):
         """Live Chat with operators: one system line telling the model how to

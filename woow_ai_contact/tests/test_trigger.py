@@ -49,6 +49,38 @@ class TestTrigger(AiContactCase):
         self.post(chat, self.internal, 'still there?')
         self.assertFalse(self.jobs(chat))
 
+    def test_archived_contact_note_once_per_chat(self):
+        # QA C: a user writing to an archived AI contact got silence
+        self.env['res.lang']._activate_lang('zh_TW')
+        self.internal.lang = 'zh_TW'
+        chat = self.chat(self.internal)
+        before = len(self.bot_messages(chat))
+        self.contact.active = False
+        with patch(BACKEND_POST) as post:
+            self.post(chat, self.internal, 'still there?')
+            self.post(chat, self.internal, 'hello?')
+        post.assert_not_called()
+        self.assertFalse(self.jobs(chat))
+        notes = self.bot_messages(chat)[before:]
+        self.assertEqual(len(notes), 1)  # once per conversation
+        self.assertIn('這個 AI 聯絡人已停用。', notes.body)
+        self.assertTrue(chat.woow_ai_inactive_notice_sent)
+        # reactivated: answers again; archived again later: the note comes back once
+        self.contact.active = True
+        self.assertFalse(chat.woow_ai_inactive_notice_sent)
+        self.post(chat, self.internal, 'back?')
+        self.assertEqual(len(self.jobs(chat)), 1)
+        self.contact.active = False
+        self.post(chat, self.internal, 'gone again?')
+        self.assertEqual(len(self.bot_messages(chat)[before:]), 2)
+
+    def test_no_archived_note_in_human_chats(self):
+        other = new_test_user(self.env, 'ai_other_note', groups='base.group_user')
+        chat = self.env['discuss.channel'].with_user(self.internal).channel_get([other.partner_id.id])
+        self.post(chat, self.internal, 'hi colleague')
+        self.assertFalse(chat.woow_ai_inactive_notice_sent)
+        self.assertEqual(chat.message_ids.author_id, self.internal.partner_id)
+
     def test_not_in_group_channel_or_human_chat(self):
         group = self.env['discuss.channel'].create({
             'name': 'group', 'channel_type': 'group',
