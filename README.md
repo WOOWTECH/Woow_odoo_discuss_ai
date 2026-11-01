@@ -9,13 +9,22 @@ server) or to an n8n webhook.
 
 | Module | Status | What it does |
 |---|---|---|
-| `woow_ai_contact` | available | AI contacts, backend connections, durable reply queue, files both ways, push API, Discuss sidebar section, portal `/my/ai` |
+| `woow_ai_contact` | available | AI contacts, backend connections, durable reply queue, files both ways, push API, chats listed like OdooBot's, portal `/my/ai` |
 | `woow_ai_contact_livechat` | available (auto-installed with Live Chat) | Live Chat channels answered by an AI contact: human handoff, pause, `/ai on` resume, staged migration from `im_livechat_ai` (see [docs/LIVECHAT.md](docs/LIVECHAT.md)) |
 
 ## Features
 
-- Direct chats with AI contacts from the Discuss sidebar ("AI Contacts"),
-  from the portal (`/my` card → `/my/ai`) or from the normal chat search.
+- Like OdooBot: the first time a user opens the web client (Discuss, the
+  messaging menu, also on phones) the chats with every AI contact they may use
+  are created, pinned in the chat list, with the welcome message (unread: the
+  messaging icon shows a counter). AI contacts added or allowed later are added
+  the next time. Once per user and AI contact: a chat the user unpinned does not
+  come back by itself, only when the AI pushes a message or the user opens it
+  again (chat search, portal).
+- "Start a conversation" finds the AI contacts the user may use (and only
+  those); their status is "bot" (green heart), like OdooBot.
+- Portal users: their chats are created the first time they open `/my`; the
+  `/my` card → `/my/ai` list stays.
 - Replies are produced in the background after the user's message is saved,
   by the scheduled action *AI Contacts: Run AI Replies* in the **cron process**
   (never in a web worker, so web worker restarts do not cut long answers):
@@ -56,7 +65,7 @@ server) or to an n8n webhook.
 
 ## Configure
 
-Settings → AI Contacts → AI Contacts → New (system administrators only).
+Discuss → Configuration → AI Contacts → New (system administrators only; *Reply Jobs* and *Call Logs* are in the same menu).
 
 | Field | Meaning |
 |---|---|
@@ -71,7 +80,7 @@ Settings → AI Contacts → AI Contacts → New (system administrators only).
 | Retries | 0–2 (default 1), connection failures and HTTP 429/503 only |
 | Welcome / Error Message | first message of a new chat / reply when the backend fails |
 | Download Domains / Max File Size | hosts whose files in replies are attached (one per line, `*.example.com` allowed) / default 20 MB |
-| Allowed Groups | who may chat with it (default Internal User + Portal); empty = no direct chats (Live Chat only), the bot partner stays archived |
+| Allowed Groups | who may chat with it (default Internal User + Portal); empty = no direct chats (Live Chat only): the bot partner stays archived, no chat is created and nobody finds it |
 | Push API | *Generate Push Key* shows the key once |
 | Debug | *Log Request Content* — keep off except while debugging |
 

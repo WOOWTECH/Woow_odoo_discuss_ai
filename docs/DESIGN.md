@@ -2,13 +2,13 @@
 
 Odoo 18。讓內部用戶與 portal 用戶在 Discuss 裡和「AI 聯絡人」一對一私訊；AI 聯絡人背後接 Hermes、公司 LiteLLM（OpenAI 相容）或 n8n webhook。同一套後端連接之後也接手 Live Chat AI（取代 `im_livechat_ai`）。
 
-定案來源：`work/woow-ai-contact-20261031/COORD.md`（負責人 2026-10-31，定案 1–28；第二批 21–28 見文末「負責人第二批定案」）。線路格式的完整說明在 [PROTOCOL.md](PROTOCOL.md)（英文，給 Hermes／n8n 串接者）。
+定案來源：`work/woow-ai-contact-20261031/COORD.md`（負責人 2026-10-31，定案 1–28；第二批 21–28 見文末「負責人第二批定案」；2026-11-01 定案 30–37 見「入口」與「18.0.1.3.0」）。線路格式的完整說明在 [PROTOCOL.md](PROTOCOL.md)（英文，給 Hermes／n8n 串接者）。
 
 ## 模組
 
 | 模組 | 相依 | 安裝 | 內容 |
 |---|---|---|---|
-| `woow_ai_contact` | `mail`, `portal` | 手動 | AI 聯絡人、後端連接、回覆佇列、多媒體、推送 API、Discuss 側欄、portal 入口、呼叫紀錄 |
+| `woow_ai_contact` | `mail`, `portal` | 手動 | AI 聯絡人、後端連接、回覆佇列、多媒體、推送 API、像 OdooBot 的自動私訊與搜尋、portal 入口、呼叫紀錄 |
 | `woow_ai_contact_livechat` | `woow_ai_contact`, `im_livechat` | `auto_install` | Live Chat 頻道選 AI 聯絡人、轉真人／暫停、關鍵字轉真人、從 `im_livechat_ai` 搬移 |
 
 不相依 `cs_portal_discuss`／`woow_odoo_portal_discuss`。有裝 `cs_portal_discuss` 的站，AI 私訊會自動出現在 `/my/discussions`（它是 `channel_type = 'chat'` 且使用者是成員）。
@@ -21,7 +21,7 @@ Odoo 18。讓內部用戶與 portal 用戶在 Discuss 裡和「AI 聯絡人」�
 | `name`、`image_1920`、`description` | 顯示用；`partner_id` 同步名稱與頭像 | 有權使用者 |
 | `partner_id` | 機器人 partner（建立時自動產生，無 user，標籤「AI Contact」）。`active`＝AI 聯絡人有效**且** `allowed_group_ids` 不是空的；AI 聯絡人封存，或群組清空（只給 Live Chat 用），partner 就保持封存，一般「開始對話」搜尋找不到 | 有權使用者 |
 | `active`、`sequence` | | |
-| `allowed_group_ids` | 可使用的群組；預設 `base.group_user`＋`base.group_portal`。**空集合＝不能私訊**（側欄、portal、推送都不列；只給 Live Chat 等橋接用） | 系統管理員 |
+| `allowed_group_ids` | 可使用的群組；預設 `base.group_user`＋`base.group_portal`。**空集合＝不能私訊**（不自動建私訊、「開始對話」搜不到、portal、推送都不列；只給 Live Chat 等橋接用） | 系統管理員 |
 | `backend_type` | `openai`（Hermes／LiteLLM）或 `n8n` | 系統管理員 |
 | `endpoint_url` | openai：base URL（…/v1）；n8n：webhook 完整網址 | 系統管理員 |
 | `api_key` | 只寫不讀：非儲存 compute／inverse 欄位，實際值存在只用 SQL 存取的欄 `woow_ai_contact.api_key_secret`（不是 ORM 欄位，任何 read／export／表單都拿不到）；另有 `api_key_set` 顯示是否已設定。**端點換到另一台伺服器（scheme／主機／埠不同，或清空）或換後端類型、同一次寫入又沒給新金鑰 → 已存的金鑰自動移除**（不會把公司 LiteLLM 金鑰送到新主機，也不會把 n8n 簽章金鑰當 Bearer 送出；原本沒網址、之後才填的不算，給搬移用）；表單沒有金鑰時顯示提示。openai：Bearer 金鑰；**n8n：HMAC 簽章金鑰，表單標籤「簽章金鑰」，永遠不送出** | 系統管理員 |
@@ -36,6 +36,7 @@ Odoo 18。讓內部用戶與 portal 用戶在 Discuss 裡和「AI 聯絡人」�
 | `download_domains` | AI 回覆中可下載成附件的網域白名單（每行一個，精確主機名或 `*.example.com`） | 系統管理員 |
 | `max_download_mb` | 預設 20 | 系統管理員 |
 | `push_key_hash`、`push_key_hint` | 推送 API 金鑰（只存 sha256；「產生推送金鑰」按鈕只顯示一次） | 系統管理員 |
+| `onboarded_user_ids` | 18.0.1.3.0 起；已自動建過（或找到過）私訊的使用者（表 `woow_ai_contact_onboarded_user_rel`，主鍵 contact＋user）。不在清單內、又有權使用的使用者，下次打開討論／portal 首頁時才自動建私訊 | 系統管理員 |
 | `log_payload` | 預設 False；開了才在呼叫紀錄存請求／回應內容（除錯用，會提示隱私） | 系統管理員 |
 
 ### `woow.ai.job`（回覆工作）
@@ -173,10 +174,16 @@ Authorization: Bearer <push key>      # 對應到某個 AI 聯絡人
 
 ## 入口
 
-- **後台 Discuss 側欄**：不 patch 既有元件，而是在 Odoo 18 的側欄登錄表 `mail.discuss_sidebar_items` 加一個元件（sequence 25：在信箱 mailbox 20 之後、分類 channels 30 之前，也就是「頻道」區塊上方），只載入 `web.assets_backend`（公開頁不顯示）。列出目前使用者可用的 AI 聯絡人（`/woow_ai/contacts` JSON-RPC）；點了呼叫 `/woow_ai/open`（找或建私訊，第一次建立時張貼 `welcome_message`），回傳 `Store` 資料並在 Discuss 開啟。
-- **portal**：不由核心自己做聊天頁（不採用 E2E 的建議）：Odoo 18 原生就有 `/discuss/channel/<id>`（`auth=public`，沙盒映像 `mail/controllers/discuss/public_page.py` 已確認）。`/my` 首頁卡片「AI 聯絡人」（portal 計數器 `woow_ai_contact_count`，沒有可用的 AI 聯絡人就不顯示）→ `/my/ai`（卡片清單）→ `/my/ai/<contact_id>/open` 找或建私訊後導到 `/discuss/channel/<id>`（Odoo 原生公開 Discuss 畫面，附件上傳／圖片預覽皆為 Odoo 原生）；有裝 `cs_portal_discuss` 時才加 `?discussions=1`（沒裝時 Odoo 會對未知參數記 warning）。內部用戶改導到後台 `/odoo/discuss?active_id=discuss.channel_<id>`。
+- **後台：像 OdooBot（定案 30–35，18.0.1.3.0）**。手機版 Discuss 是底部分頁（郵箱／聊天／群組／線上客服），沒有側欄，原本的側欄區塊「AI 聯絡人」在手機上看不到，所以拿掉（連同 `/woow_ai/contacts`、`/woow_ai/open` 兩條只給它用的 JSON 路由），入口一律是聊天清單：
+  - **自動建私訊**：覆寫 `res.users._init_messaging(store)`（網頁前端每次載入時 `/mail/data` 的 `init_messaging`；OdooBot 是在 `_on_webclient_bootstrap` 建，同一個時機），在 `super()` **之前**呼叫 `woow.ai.contact._onboard_user(user)`：找出「有效、有機器人 partner、`allowed_group_ids` 與使用者群組有交集、使用者不在 `onboarded_user_ids`」的 AI 聯絡人；對每個先 `INSERT … ON CONFLICT DO NOTHING RETURNING` 記成已建（同一使用者兩個分頁同時載入時只有一個請求拿到，另一個等前者 commit 後拿不到或得到序列化錯誤由 Odoo 重試，不會建兩個私訊或兩則招呼語），已有私訊（之前開過、可能已取消置頂）就只記錄、不動它，沒有才 `_get_or_create_chat`（置頂、`allow_public_upload`、張貼招呼語）。因為在 `super()` 之前，同一次回應的 `initChannelsUnreadCounter` 就算進去（定案 32：招呼語算未讀，訊息圖示有數字；新成員的 `new_message_separator` 是 0，機器人的訊息就是未讀）。
+  - `/mail/data` 是唯讀路由：沒有待建時只多一個讀取查詢；有待建而 cursor 是唯讀（有 replica 時）就主動丟 `ReadOnlySqlTransaction`，Odoo 用讀寫 cursor 重跑這個請求（不留「bad query」錯誤 log）。其他錯誤在 savepoint 裡記 log 後吞掉（不影響討論載入；整批回復，下次再試）。
+  - **只自動建一次**（定案 34）：`onboarded_user_ids`（每人每個 AI 聯絡人一筆）。使用者取消置頂／關掉後不會自己回來；`_get_or_create_chat`（推送、portal、搜尋開啟都經過它）會重新置頂並送 `Store` 給使用者，也會記成已建。升級到 18.0.1.3.0 的搬移把「已經有私訊」的使用者都記成已建（不會有第二則招呼語）。
+  - **搜尋**（定案 31）：Odoo 18 的「開始對話」（`ChannelSelector`，手機版聊天分頁的按鈕也是它）與指令面板都呼叫 `res.partner.im_search`，原生只搜內部使用者；擴充後另外加上「名稱符合、目前使用者有權使用（`_user_allowed`）」的 AI 聯絡人機器人 partner（`Store` 結果合併）。群組為空或沒權限的永遠搜不到。選了之後前端呼叫 `discuss.channel.channel_get(partners_to=[機器人])`：覆寫後只要對象是 AI 聯絡人的機器人，就先檢查權限（沒權限丟 `AccessError`「您沒有權限使用這個 AI 聯絡人」，不建頻道），再走 `_get_or_create_chat`（招呼語、上傳旗標、已建記錄、`force_open` 設 `fold_state = open`）；其他對象照原生。`_get_or_create_chat` 自己建頻道時帶 `woow_ai_channel_get` context 略過這段。
+  - **狀態**（定案 35）：`res.partner._compute_im_status` 對 AI 聯絡人的機器人（含只給 Live Chat 用的封存機器人）回 `bot`，前端顯示綠色愛心（同 OdooBot，`mail` 的 `res.partner` 對 `base.partner_root` 的做法）。
+- **設定選單**（定案 37）：AI 聯絡人、回覆工作、呼叫紀錄從「設定」（`base.menu_administration`）搬到「討論 › 配置」（`mail.menu_configuration`，與通知、語音及視訊、預設回應同一層，sequence 30–32），各自 `groups = base.group_system`（權限照舊）；舊的上層選單 `menu_woow_ai_root` 升級時刪除。
+- **portal**：第一次進 `/my`（`CustomerPortal.home` 覆寫）就呼叫同一個 `_woow_ai_onboard`（定案 36，同樣只建一次）；卡片與 `/my/ai` 不變。不由核心自己做聊天頁（不採用 E2E 的建議）：Odoo 18 原生就有 `/discuss/channel/<id>`（`auth=public`，沙盒映像 `mail/controllers/discuss/public_page.py` 已確認）。`/my` 首頁卡片「AI 聯絡人」（portal 計數器 `woow_ai_contact_count`，沒有可用的 AI 聯絡人就不顯示）→ `/my/ai`（卡片清單）→ `/my/ai/<contact_id>/open` 找或建私訊後導到 `/discuss/channel/<id>`（Odoo 原生公開 Discuss 畫面，附件上傳／圖片預覽皆為 Odoo 原生）；有裝 `cs_portal_discuss` 時才加 `?discussions=1`（沒裝時 Odoo 會對未知參數記 warning）。內部用戶改導到後台 `/odoo/discuss?active_id=discuss.channel_<id>`。
 - AI 私訊一律設 `allow_public_upload = True`：Odoo 的 `/mail/attachment/upload` 對非內部用戶只允許在有開這個旗標的頻道上傳（沙盒實測：沒開時 portal 上傳回 403「本頻道不允許上載附件」）。私訊只有兩個成員，開了不擴大存取範圍。
-- 一般「開始對話」搜尋也找得到（partner 有效即可）；權限仍以 `allowed_group_ids` 在觸發時把關。
+- 「開始對話」搜尋只列出自己有權使用的 AI 聯絡人（見上）；權限另外仍以 `allowed_group_ids` 在開啟與觸發回覆時把關。
 
 ## 權限
 
@@ -213,7 +220,7 @@ Authorization: Bearer <push key>      # 對應到某個 AI 聯絡人
 - 單元：觸發條件、權限、markdown→HTML（含表格與惡意輸入）、白名單下載（轉址、超大、假 mimetype）、簽名網址（過期、竄改）、推送 API（401／403／404）、佇列（連發只回最新、重啟恢復、逾時）。
   審查後補：SSE 串流（keepalive、`hermes.tool.progress`、reasoning_content、跨 chunk 的多位元組字、空閒逾時、總時限、沒有 [DONE]）、重試範圍（429／503 重試，502／504／524／讀取逾時不重試、總時限內）、messages 正規化、內嵌張數與總量、假圖片不內嵌、身分／提示詞鉤子、data URI 與 MEDIA、`<thinking>`／特殊 token、連結網域鉤子、OOXML 類型、純 http 只限內網、測試連線、機器人 partner 封存規則、換聯絡人跳過、`visitor_told`。沙盒實測（sbx/live）：25 秒串流（每 2 秒 keepalive）、n8n 不帶 Authorization＋300 秒時間窗、測試連線。
 - 整合：沙盒 ns 跑真的 Hermes／n8n？—— n8n 用沙盒內的假 webhook（簡單 HTTP 伺服器）＋正式 n8n 的測試 workflow；openai 型用 LiteLLM 測試金鑰。
-- 瀏覽器：內部用戶側欄開 AI、portal 用戶 `/my/ai` 開對話、上傳圖片／PDF、收到表格與圖片附件。
+- 瀏覽器：內部用戶聊天清單（含手機版）看到自動建好的 AI 私訊、「開始對話」搜尋開 AI、portal 用戶 `/my/ai` 開對話、上傳圖片／PDF、收到表格與圖片附件。
 
 ## 實作補充與差異（18.0.1.0.0）
 
