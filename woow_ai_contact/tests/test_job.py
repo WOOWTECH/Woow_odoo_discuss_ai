@@ -27,6 +27,17 @@ def run(job):
 @tagged('woow_ai_contact')
 class TestOpenAiJob(AiContactCase):
 
+    def test_handoff_marker_left_in_direct_chats(self):
+        # decision 40 is Live Chat only: no handoff line in the prompt, the reply is posted untouched
+        chat = self.chat(self.internal)
+        self.post(chat, self.internal, '我要跟人講話')
+        job = self.jobs(chat)
+        with patch(BACKEND_POST, return_value=openai_ok('請聯絡同事。[[handoff]]')) as post:
+            run(job)
+        self.assertEqual(job.state, 'done', job.error)
+        self.assertIn('[[handoff]]', job.reply_message_id.body)
+        self.assertNotIn('[[handoff]]', json.dumps(json.loads(post.call_args.kwargs['data']), ensure_ascii=False))
+
     def test_reply_posted_with_markdown_table(self):
         chat = self.chat(self.internal)
         self.post(chat, self.internal, '報價？')
@@ -462,6 +473,29 @@ class TestN8nJob(AiContactCase):
         chat, job, _post = self.run_n8n({'skip': True, 'output': 'o'}, user=self.internal)
         self.assertEqual(job.state, 'done')
         self.assertFalse(job.reply_message_id)
+
+    def test_handoff_field_parsing(self):
+        Contact = self.env['woow.ai.contact']
+        self.assertEqual(Contact._n8n_handoff({'handoff': True, 'handoff_reason': '  想找\n真人 '}), (True, '想找 真人'))
+        self.assertEqual(Contact._n8n_handoff([{'handoff': True, 'output': 'x'}]), (True, None))
+        for data in ({'handoff': 'true'}, {'handoff': 1}, {'reply': 'x'}, [], 'x', {'handoff': False}):
+            self.assertEqual(Contact._n8n_handoff(data), (False, None), data)
+        # handoff alone is a valid answer (no text); with handoff, skip is ignored
+        self.assertEqual(Contact._n8n_replies({'handoff': True}), ([], False))
+        self.assertEqual(Contact._n8n_replies([{'handoff': True}]), ([], False))
+        self.assertEqual(Contact._n8n_replies({'handoff': True, 'skip': True}), ([], False))
+        self.assertEqual(Contact._n8n_replies({'handoff': True, 'output': 'o'}),
+                         ([{'text': 'o', 'attachments': []}], False))
+
+    def test_handoff_ignored_in_direct_chats(self):
+        # decision 40 is Live Chat only: a direct chat posts the answer untouched (marker included)
+        chat, job, _post = self.run_n8n({'handoff': True, 'output': '好的 [[handoff]]'})
+        self.assertEqual(job.state, 'done', job.error)
+        self.assertIn('[[handoff]]', job.reply_message_id.body)
+        # no text: nothing to post, the user gets the error message as before
+        chat, job, _post = self.run_n8n({'handoff': True}, user=self.internal)
+        self.assertEqual(job.state, 'failed')
+        self.assertEqual(job.error, 'empty reply')
 
     def test_invalid_output_answers(self):
         for answer, error in (({'output': 3}, "'output' is not a string"), ({'output': ''}, 'empty reply'),

@@ -6,8 +6,8 @@ Other channel kinds plug in by overriding the ``_woow_ai_*`` hooks (the Live
 Chat bridge overrides ``_woow_ai_channel_contact``, ``_woow_ai_author_role``,
 ``_woow_ai_message_kind``, ``_woow_ai_is_paused``, ``_woow_ai_requester``,
 ``_woow_ai_identity``, ``_woow_ai_system_prompt``, ``_woow_ai_link_hosts``,
-``_woow_ai_channel_info``, ``_woow_ai_check_author`` and
-``_woow_ai_conversation_events``).
+``_woow_ai_channel_info``, ``_woow_ai_check_author``,
+``_woow_ai_conversation_events`` and ``_woow_ai_review_answer``).
 """
 
 import html as html_lib
@@ -127,6 +127,17 @@ class DiscussChannel(models.Model):
         link). Bridges facing anonymous visitors return their own site hosts
         (prompt-injection phishing); other links are shown as plain text."""
         return None
+
+    def _woow_ai_review_answer(self, contact, result):
+        """Look at the backend's answer before it is posted; return True to
+        hand the conversation to a human (``woow.ai.job._process_backend_handoff``).
+
+        ``result`` is the dict of ``woow.ai.contact._call_backend`` (no error):
+        a bridge may edit ``result['replies']`` in place (e.g. strip a marker,
+        drop replies left empty). Core (direct chats): the answer is posted
+        untouched and the n8n ``handoff`` flag is ignored (False).
+        """
+        return False
 
     def _woow_ai_channel_info(self, contact):
         """``channel`` object of the n8n payload."""

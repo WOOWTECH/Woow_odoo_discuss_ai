@@ -48,7 +48,8 @@ Flow:
   triggered at its retry time.
 
 Bridges (Live Chat) plug in through the discuss.channel ``_woow_ai_*`` hooks
-and by overriding ``_process_handoff`` / ``_notify_failure`` here.
+and by overriding ``_process_handoff`` / ``_process_backend_handoff`` /
+``_notify_failure`` here.
 """
 
 import json
@@ -771,7 +772,10 @@ class WoowAiJob(models.Model):
         try:
             result = contact._call_backend(channel, history, job=self, before_call=commit_step)
             prepared = []
-            if not result['error'] and not result['skip']:
+            # the channel may hand the conversation to a human (Live Chat: the
+            # n8n "handoff" flag, the "[[handoff]]" marker, stripped here)
+            handoff = not result['error'] and channel._woow_ai_review_answer(contact, result)
+            if not result['error'] and (not result['skip'] or handoff):
                 # downloads happen here: no row lock held, nothing written yet
                 prepared = [contact._prepare_reply(reply, channel=channel) for reply in result['replies']]
         finally:
@@ -800,6 +804,10 @@ class WoowAiJob(models.Model):
             return
         if result['error']:
             self._give_up(result['error'])
+        elif handoff:
+            messages = contact._post_replies(channel, prepared) if prepared else self.env['mail.message']
+            self._process_backend_handoff(commit_step, messages, result.get('handoff_reason'))
+            return
         elif result['skip']:
             self._finish('done', 'the backend chose not to reply')
         else:
@@ -860,6 +868,16 @@ class WoowAiJob(models.Model):
     def _process_handoff(self, commit_step):
         """Hook for bridges (Live Chat: post the handoff notice, alert operators)."""
         self._finish('skipped', 'handoff is not supported in this channel')
+        commit_step()
+
+    def _process_backend_handoff(self, commit_step, messages, reason=None):
+        """Hook for bridges: the backend's answer asked for a human
+        (``discuss.channel._woow_ai_review_answer`` returned True) and its
+        text, if any, was posted as ``messages``; the caller holds the
+        channel row lock. Live Chat pauses the AI, posts the handoff notice
+        when there was no text and alerts the operators. Core: only finish."""
+        self._finish('done', False, reply_message=messages.sorted('id')[-1:] or None)
+        self._supersede_older()
         commit_step()
 
     def _finish(self, state, error, reply_message=None):

@@ -50,6 +50,7 @@ TEST_TIMEOUT = 15
 MAX_LOG_PAYLOAD = 200000  # characters
 MAX_ERROR_LENGTH = 300
 MAX_REPLIES = 10
+MAX_HANDOFF_REASON = 300  # characters of an n8n "handoff_reason" kept
 METADATA_MAX_KEYS = 16
 METADATA_MAX_VALUE = 512
 SSE_CHUNK_SIZE = 1024
@@ -711,12 +712,17 @@ class WoowAiContactBackend(models.Model):
         Accepted (as im_livechat_ai 18.0.1.2.0): ``{"skip": true}``,
         ``{"replies": [...]}``, ``{"reply": {...}}`` / ``{"reply": "text"}``,
         the n8n AI Agent / Chat Trigger answer ``{"output": "text"}`` (one
-        message), each also as an n8n item list ``[{...}]`` (first item)."""
+        message), each also as an n8n item list ``[{...}]`` (first item).
+        ``{"handoff": true}`` alone (no reply field) is a handoff without
+        text (_n8n_handoff); with ``handoff`` the ``skip`` flag is ignored."""
         if isinstance(data, list) and data and isinstance(data[0], dict):
             data = data[0]  # "Respond to Webhook" with all incoming items
         if not isinstance(data, dict):
             raise BackendError('invalid_response', 'invalid response: not a JSON object')
-        if data.get('skip') is True:
+        handoff = data.get('handoff') is True
+        if handoff and not {'replies', 'reply', 'output'} & set(data):
+            return [], False
+        if data.get('skip') is True and not handoff:
             return [], True
         if 'replies' in data:
             raw = data['replies']
@@ -742,6 +748,21 @@ class WoowAiContactBackend(models.Model):
                 raise BackendError('invalid_response', 'invalid response: bad reply fields')
             replies.append({'text': strip_think(text), 'attachments': attachments})
         return replies, False
+
+    @staticmethod
+    def _n8n_handoff(data):
+        """n8n JSON -> (handoff requested, reason or None): ``"handoff": true``
+        (top level or in the first item of an n8n item list) and an optional
+        ``"handoff_reason"`` string. What a handoff does is up to the channel
+        (``discuss.channel._woow_ai_review_answer``): Live Chat hands the
+        visitor to a human, direct chats ignore it."""
+        if isinstance(data, list) and data and isinstance(data[0], dict):
+            data = data[0]
+        if not isinstance(data, dict) or data.get('handoff') is not True:
+            return False, None
+        reason = data.get('handoff_reason')
+        reason = ' '.join(reason.split())[:MAX_HANDOFF_REASON] if isinstance(reason, str) else ''
+        return True, reason or None
 
     # --- Call ---
 
@@ -793,7 +814,9 @@ class WoowAiContactBackend(models.Model):
 
         Returns:
             dict: replies (list of {'text', 'attachments'}), skip (bool),
-                error (short text or None), call_log (woow.ai.call.log)
+                handoff (bool: the n8n answer asked for a human, see
+                _n8n_handoff), handoff_reason (str or None), error (short
+                text or None), call_log (woow.ai.call.log)
         """
         self.ensure_one()
         contact = self.sudo()
@@ -801,7 +824,7 @@ class WoowAiContactBackend(models.Model):
         started = time.time()
         log = {'status': 'error', 'http_status': None, 'error': None, 'request': None, 'response': None,
                'usage': None}
-        result = {'replies': [], 'skip': False, 'error': None}
+        result = {'replies': [], 'skip': False, 'handoff': False, 'handoff_reason': None, 'error': None}
         try:
             url, headers, body, payload = contact._build_request(channel, history, trigger)
             log['request'] = payload
@@ -857,7 +880,9 @@ class WoowAiContactBackend(models.Model):
                     else:
                         text = None
                         result['replies'], result['skip'] = contact._n8n_replies(data)
-                        if not result['skip'] and not any(r['text'] or r['attachments'] for r in result['replies']):
+                        result['handoff'], result['handoff_reason'] = contact._n8n_handoff(data)
+                        if not result['skip'] and not result['handoff'] \
+                                and not any(r['text'] or r['attachments'] for r in result['replies']):
                             raise BackendError('invalid_response', 'empty reply')
                 if text is not None:
                     if not text:
