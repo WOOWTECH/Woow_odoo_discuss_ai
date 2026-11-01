@@ -1,11 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <menuitem id="menu_woow_ai_root" name="AI Contacts" parent="base.menu_administration"
-              sequence="45" groups="base.group_system"/>
-    <menuitem id="menu_woow_ai_contact" name="AI Contacts" parent="menu_woow_ai_root"
-              action="action_woow_ai_contact" sequence="10"/>
-    <menuitem id="menu_woow_ai_job" name="Reply Jobs" parent="menu_woow_ai_root"
-              action="action_woow_ai_job" sequence="20"/>
-    <menuitem id="menu_woow_ai_call_log" name="Call Logs" parent="menu_woow_ai_root"
-              action="action_woow_ai_call_log" sequence="30"/>
+    <!-- Discuss > Configuration (next to Notifications, Voice & Video, Canned Responses), administrators only -->
+    <menuitem id="menu_woow_ai_contact" name="AI Contacts" parent="mail.menu_configuration"
+              action="action_woow_ai_contact" sequence="30" groups="base.group_system"/>
+    <menuitem id="menu_woow_ai_job" name="Reply Jobs" parent="mail.menu_configuration"
+              action="action_woow_ai_job" sequence="31" groups="base.group_system"/>
+    <menuitem id="menu_woow_ai_call_log" name="Call Logs" parent="mail.menu_configuration"
+              action="action_woow_ai_call_log" sequence="32" groups="base.group_system"/>
 </odoo>
