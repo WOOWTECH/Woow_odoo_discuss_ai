@@ -10,7 +10,10 @@ Each AI contact has one backend:
 | `backend_type` | Endpoint URL (AI contact form) | Typical backends |
 |---|---|---|
 | `openai` | base URL ending in `/v1`; `/chat/completions` is appended | Hermes, LiteLLM, any OpenAI-compatible server |
-| `n8n` | full webhook URL | n8n "Webhook" node (production URL) |
+| `n8n` | full production webhook URL (a Chat Trigger: `<n8n>/webhook/<webhookId>/chat`) | n8n "Webhook" node, or an existing n8n "Chat Trigger" workflow |
+
+The n8n request and answers are the same as `im_livechat_ai` 18.0.1.2.0
+(Live Chat), so one n8n workflow works with both modules.
 
 The endpoint must be `https://`. Plain `http://` is accepted only for
 `localhost`, `127.0.0.1`, `::1` and in-cluster hosts written in full,
@@ -23,7 +26,7 @@ ending in `.svc.cluster.local` (for example
 | Secret | Direction | Where it is set | How it is used |
 |---|---|---|---|
 | API key (`openai`) | Odoo → backend | AI contact, *API Key* | `Authorization: Bearer <key>` on every call |
-| Signing secret (`n8n`) | Odoo → n8n | AI contact, *Signing Secret* (same field, labelled for n8n) | HMAC key of `X-Woow-Signature`; **never sent** |
+| Signing secret (`n8n`, optional) | Odoo → n8n | AI contact, *Signing Secret* (same field, labelled for n8n) | HMAC key of `X-Woow-Signature`; **never sent**. Empty: requests are not signed (for example a public Chat Trigger) |
 | Push key | backend → Odoo | AI contact, *Generate Push Key* (shown once) | `Authorization: Bearer wpk_…` on `POST /woow_ai/v1/push` |
 
 Use a different random value for the n8n signing secret and the push key.
@@ -91,7 +94,10 @@ Every call carries:
 - `openai` with *Stream Replies* on (the default): the call fails when **no
   byte** arrives for 30 s (SSE comments such as `: keepalive` count), and when
   the whole answer takes longer than the AI contact's *Timeout* (default 300 s).
-- `openai` without streaming and `n8n`: the answer must arrive within *Timeout*.
+- `openai` without streaming: the answer must arrive within *Timeout*.
+- `n8n`: the answer must arrive within *Timeout*, **at most 90 s** (as
+  `im_livechat_ai` 18.0.1.2.0: a public n8n is behind Cloudflare, which cuts
+  at about 100 s). Longer workflows answer `{"skip": true}` and push the reply.
 - *Retries* (0–2, default 1): only when the connection could not be opened
   (refused, unknown host, connect timeout: the request was not sent) or the
   backend answered **HTTP 429 or 503**, after 3 s and then 10 s, and only while
@@ -320,7 +326,9 @@ with zero counts does not erase real ones.
 
 ## `n8n` backend
 
-Request (`POST {endpoint_url}`), JSON body (UTF-8, compact):
+Request (`POST {endpoint_url}`), JSON body (UTF-8, compact). The two
+`X-Woow-*` headers are sent **only when a signing secret is set**; without one
+the request carries `Content-Type` only:
 
 ```http
 POST /webhook/ai-contact HTTP/1.1
@@ -351,9 +359,17 @@ readable by everyone who can open the workflow's executions.)
     {"role": "assistant", "text": "您好，我是產品顧問。", "attachments": []},
     {"role": "user", "text": "你好", "attachments": []}
   ],
-  "events": []
+  "events": [],
+  "action": "sendMessage",
+  "sessionId": "woow-ai-0edfec80-42",
+  "chatInput": "幫我看這份報價單"
 }
 ```
+
+`action`, `sessionId` and `chatInput` are the fields an n8n **Chat Trigger**
+reads (always `"sendMessage"`, the same value as `session_id`, and
+`message.text`); a Webhook-node workflow can ignore them. (In the JSON the
+keys follow `session_id`; their order carries no meaning.)
 
 `message` is the newest user message (the one being answered); `history` holds
 the earlier context, unchanged (the welcome message and pushes included).
@@ -364,10 +380,13 @@ docs/LIVECHAT.md). Live Chat visitors are often anonymous: when
 `channel.type` is `livechat` or `user.is_guest` is true, give the model public
 data tools only.
 
-The *Test Connection* button sends a signed `{"event": "ping", "contact": {…}}`;
-answer any HTTP 200 (for example `{"skip": true}`) to non-`message` events.
+The *Test Connection* button sends
+`{"event": "ping", "contact": {…}, "action": "loadPreviousSession", "sessionId": "woow-ai-ping-<AI contact id>"}`
+(signed when a secret is set); answer any HTTP 200 (for example
+`{"skip": true}`) to non-`message` events. A Chat Trigger answers
+`loadPreviousSession` itself, without running the agent.
 
-### Verifying the call (required)
+### Verifying the call (recommended; required when a secret is set)
 
 `X-Woow-Signature` is `sha256=` + hex HMAC-SHA256 keyed with the AI contact's
 signing secret, over the bytes `"<X-Woow-Timestamp>.<raw request body>"`. The
@@ -396,8 +415,8 @@ return [{ json: JSON.parse(raw) }];
 
 ### Response
 
-HTTP 200 with JSON, synchronously (the call waits up to *Timeout*; see the
-Cloudflare note above):
+HTTP 200 with JSON, synchronously (the call waits up to *Timeout*, at most
+90 s; see the Cloudflare note above):
 
 ```json
 {"reply": {"text": "markdown 文字", "attachments": [
@@ -414,11 +433,17 @@ Cloudflare note above):
 {"skip": true}
 ```
 
+```json
+{"output": "markdown 文字"}
+```
+
 - `reply` → one message; `replies` → several messages (at most 10); `skip` →
-  no message at all.
+  no message at all; `output` (the default answer of an n8n AI Agent and of a
+  Chat Trigger) → one message, text only. When several are present the first
+  of `skip`, `replies`, `reply`, `output` wins.
 - For convenience a bare string (`{"reply": "text"}`) and an n8n item list
-  (`[{"reply": …}]`) are accepted too.
-- Anything else (non-200, not JSON, no `reply`/`replies`/`skip`, empty reply)
+  (`[{"reply": …}]`, `[{"output": …}]`; the first item is used) are accepted too.
+- Anything else (non-200, not JSON, no `reply`/`replies`/`skip`/`output`, empty reply)
   is an error: the user gets the error message, the call log keeps the status.
   **When the agent fails, answer non-200** (for example 502 with
   `{"error": "agent_failed"}`), not 200 with an apology text: only then do
@@ -446,6 +471,36 @@ Put the production webhook URL into the AI contact's *Endpoint URL* and the
 signing secret into *Signing Secret*. n8n stores executions with their webhook
 body (the conversation): set an execution retention period, or turn off saving
 successful executions.
+
+### n8n Chat Trigger (hosted chat) workflows
+
+An existing workflow that starts with a **Chat Trigger** node (public chat, no
+authentication), for example the smart-home advisor, can be used as it is:
+
+- **Endpoint URL**: `<n8n>/webhook/<webhookId>/chat` (for example
+  `https://n8n.example.com/webhook/smart-home-advisor/chat`); **Signing
+  Secret** empty (a public Chat Trigger checks no signature; if you add a
+  check, set the secret).
+- Odoo sends `action: "sendMessage"`, `sessionId` and `chatInput` (with all the
+  protocol fields above); the Chat Trigger answers `{"output": "..."}`, posted
+  as one message (markdown links and `**bold**` are rendered).
+- *Test Connection* sends `action: "loadPreviousSession"`: the Chat Trigger
+  answers HTTP 200 without running the agent.
+- Agents of this kind take about 20–30 s per answer: the n8n timeout is 90 s
+  and a read timeout is never retried.
+- **Images and files**: the user's attachments are in `message.attachments`
+  (signed 1-hour `url`, `name`, `mimetype`, `size`), not in the Chat Trigger's
+  own `files` upload (Odoo sends JSON, not multipart). The Chat Trigger passes
+  the request body on to the next node, so a workflow that wants them adds an
+  **HTTP Request** node that downloads `{{ $json.message.attachments[0].url }}`
+  as a file (binary) before the AI Agent (option *Automatically Passthrough
+  Binary Images* sends images to the model), or puts the links into the
+  prompt. A workflow that ignores them answers the text only.
+- Limits: such a workflow keeps **its own memory per `sessionId`** and ignores
+  Odoo's `history`, `system_prompt` and `events`, so it does not see what a
+  human operator wrote during a Live Chat handoff, and it cannot verify that
+  the request comes from Odoo (no signature). For new workflows prefer a
+  **Webhook** node entry with the signature check above.
 
 ## Reply rendering
 
@@ -542,7 +597,8 @@ only). It never runs the AI:
 
 - `openai`: `GET {endpoint_url}/models` with the API key (a chat completion
   would start a Hermes agent and its tools).
-- `n8n`: a signed `{"event": "ping"}` POST; any HTTP 200 is a success.
+- `n8n`: the ping `{"event": "ping", "contact": {…}, "action": "loadPreviousSession", "sessionId": "woow-ai-ping-<id>"}`
+  POST (signed only when a secret is set); any HTTP 200 is a success.
 
 Only the HTTP status and one sentence are shown, never the upstream answer.
 

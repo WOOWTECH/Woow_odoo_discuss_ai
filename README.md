@@ -71,11 +71,11 @@ Discuss → Configuration → AI Contacts → New (system administrators only; *
 |---|---|
 | Name, image, description | what users see; the bot partner follows them |
 | Backend | `OpenAI compatible` or `n8n webhook` |
-| Endpoint URL | OpenAI: base URL ending in `/v1`. n8n: the webhook URL. `https` only (plain `http` allowed for `localhost` and `*.svc.cluster.local`) |
-| API Key / Signing Secret | write-only; never shown again after saving. OpenAI: the bearer key. n8n: the HMAC signing secret (never sent) |
+| Endpoint URL | OpenAI: base URL ending in `/v1`. n8n: the production webhook URL (a Chat Trigger: `…/webhook/<id>/chat`). `https` only (plain `http` allowed for `localhost` and `*.svc.cluster.local`) |
+| API Key / Signing Secret | write-only; never shown again after saving. OpenAI (required): the bearer key. n8n (optional): the HMAC signing secret (never sent); empty = requests are not signed, e.g. for a public n8n Chat Trigger |
 | Model | OpenAI only, optional |
 | System Prompt | optional; empty = the backend decides |
-| History Messages / Timeout | default 50 messages / 300 s for the whole answer |
+| History Messages / Timeout | default 50 messages / 300 s for the whole answer (n8n: at most 90 s) |
 | Stream Replies | OpenAI only, default on: SSE answer, fails after 30 s without any data |
 | Retries | 0–2 (default 1), connection failures and HTTP 429/503 only |
 | Welcome / Error Message | first message of a new chat / reply when the backend fails |
@@ -131,11 +131,21 @@ Endpoint URL `https://<your-litellm-host>/v1`, API Key = a LiteLLM virtual key
 
 ### n8n
 
-Create a workflow *Webhook (Raw Body) → Code (verify signature) → AI Agent →
+The n8n request and answers are the same as `im_livechat_ai` 18.0.1.2.0, so
+one workflow works with both modules. **Existing Chat Trigger workflow**
+(public hosted chat, e.g. the smart-home advisor): Endpoint URL
+`https://<n8n>/webhook/<webhookId>/chat`, Signing Secret empty, then *Test
+Connection* (HTTP 200). Odoo sends the Chat Trigger fields `action`,
+`sessionId`, `chatInput` and posts the agent's `{"output": ...}` as one
+message; such a workflow keeps its own memory per `sessionId` and ignores
+Odoo's history, prompt and events (see
+[docs/PROTOCOL.md](docs/PROTOCOL.md#n8n-chat-trigger-hosted-chat-workflows)).
+
+**New workflow**: create *Webhook (Raw Body) → Code (verify signature) → AI Agent →
 Respond to Webhook* (see
 [docs/PROTOCOL.md](docs/PROTOCOL.md#minimal-n8n-workflow)), then put the
 production webhook URL in Endpoint URL and a random secret in Signing Secret.
-Odoo sends no `Authorization` header: every call is authenticated only by
+Odoo sends no `Authorization` header: with a secret, every call is authenticated only by
 `X-Woow-Timestamp` + `X-Woow-Signature` (HMAC-SHA256 over the exact body bytes,
 300 s window). Calls through Cloudflare are cut after about 100 s: answer
 `{"skip": true}` quickly and reply with the push API for long workflows.

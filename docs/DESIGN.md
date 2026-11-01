@@ -85,7 +85,7 @@ Odoo 18。讓內部用戶與 portal 用戶在 Discuss 裡和「AI 聯絡人」�
 
 身分（不代登入）：`discuss.channel._woow_ai_identity(contact)`，預設＝`contact._identity(_woow_ai_requester(contact))`：`user_id`、`partner_id`、`name`、`email`、`lang`、`tz`、`is_portal`、`company_id`（橋接可加 `is_guest`、`guest_id`、`visitor_key`）。n8n 的 `user` 照帶全部；openai 型在 system 訊息加一段模型看得到的身分區塊（姓名、語言、時區、帳號種類、user_id／partner_id，**不含 email**，定案 27），`metadata` 照帶（含 email）。預設訊息（錯誤、拒絕、回覆內註記）的語言也取自這裡的 `lang`。
 
-逾時與重試（兩種後端共用）：連線 10 秒；openai 串流時 30 秒沒收到任何位元組就失敗，另外整個回覆不超過 `timeout_seconds`（requests 的 read timeout 只算單次讀取，所以總時限自己檢查）；非串流與 n8n 的讀取逾時＝`timeout_seconds`。`max_retries`（0–2，預設 1）只對連線失敗、HTTP 429、503，退避 3 秒、10 秒，總時間不超過 `timeout_seconds`；讀取逾時、502、504、524 與其他回應一律不重送（Hermes 的工具可能已經執行一半，定案 26）。
+逾時與重試（兩種後端共用）：連線 10 秒；openai 串流時 30 秒沒收到任何位元組就失敗，另外整個回覆不超過 `timeout_seconds`（requests 的 read timeout 只算單次讀取，所以總時限自己檢查）；非串流的讀取逾時＝`timeout_seconds`；n8n＝`min(timeout_seconds, 90)`（同 im_livechat_ai 18.0.1.2.0，Cloudflare 約 100 秒會切）。`max_retries`（0–2，預設 1）只對連線失敗、HTTP 429、503，退避 3 秒、10 秒，總時間不超過 `timeout_seconds`；讀取逾時、502、504、524 與其他回應一律不重送（Hermes 的工具可能已經執行一半，定案 26）。
 
 **Cloudflare 100 秒**：經對外網址的請求約 100 秒沒有位元組會被回 524。對策（定案 21）：openai 型預設串流（Hermes 每 10 秒送 keepalive、LiteLLM 持續送 token）；n8n 長流程先回 `{"skip": true}` 再用推送 API 回覆，或在 NetworkPolicy 允許時改走叢集內 `*.svc.cluster.local`。
 
@@ -109,14 +109,18 @@ Accept: text/event-stream                 # 串流時
 - 不送 `tools`；工具全部由後端自己處理（Hermes／n8n 用 Odoo MCP）。Hermes 不讀 `user`、`metadata`，身分只能靠 system 區塊。
 
 ### n8n（webhook，同步回應）
+定案 38（11-01）：格式與 L1 `im_livechat_ai` 18.0.1.2.0 完全相同，同一個 n8n 工作流程兩邊都能用（含既有的公開 Chat Trigger，例如智居顧問）。
 ```
 POST {endpoint_url}
-X-Woow-Timestamp: <unix>
-X-Woow-Signature: sha256=<hex HMAC-SHA256(api_key, "<timestamp>.<raw body>")>
+X-Woow-Timestamp: <unix>           # 只有設了簽章金鑰才送這兩個 header；
+X-Woow-Signature: sha256=<hex HMAC-SHA256(api_key, "<timestamp>.<raw body>")>   # 金鑰留空＝不簽章
                                    # 不送 Authorization（P0：n8n Executions 會存 headers）
 {
   "event": "message",
   "session_id": "...",
+  "action": "sendMessage",          # n8n Chat Trigger 讀的三個欄位（值同 session_id、message.text）
+  "sessionId": "...",
+  "chatInput": "...",
   "contact": {"id": 3, "name": "產品顧問"},
   "user": {...},
   "channel": {"id": 42, "type": "chat"},          # livechat 時 type=livechat，另附 livechat 欄位
@@ -132,12 +136,15 @@ ATT = {"id": 12, "name": "報價.xlsx", "mimetype": "...", "size": 12345,
 {"reply": {"text": "markdown 文字", "attachments": [{"name": "...", "mimetype": "...", "data_base64": "..."} | {"name": "...", "url": "https://..."}]}}
 或 {"replies": [ {同上}, ... ]}      # 多則
 或 {"skip": true}                   # 不回覆
+或 {"output": "markdown 文字"}       # n8n AI Agent／Chat Trigger 的預設回覆，一則（只有文字）
 ```
+也接受 n8n 的 item 陣列 `[{...}]`（取第一個）。同時有多個時依序取 `skip`、`replies`、`reply`、`output`。
 `url` 型附件同樣受白名單與大小限制。
 
 - 簽章是對**實際送出的原始 body 位元組**算的（Odoo 送出的就是簽的那份），n8n 要開 Webhook 的 Raw Body 驗原始位元組；時間窗 **300 秒**；驗簽失敗回非 200（Odoo 記 http_error 並貼出 error_message）。AI Agent 失敗也要回非 200，不要回 200 加道歉文字（呼叫紀錄才看得到失敗）。
-- 「測試連線」送簽章過的 `{"event": "ping", "contact": {...}}`，回任何 200 都算成功；n8n 範例對非 message 事件回 `{"skip": true}`。
-- 金鑰：`api_key`（Odoo→n8n 簽章）和推送金鑰（n8n→Odoo Bearer）是兩把不同的金鑰。
+- 「測試連線」送 `{"event": "ping", "contact": {...}, "action": "loadPreviousSession", "sessionId": "woow-ai-ping-<id>"}`（有密鑰才簽章），回任何 200 都算成功；Chat Trigger 自己回 loadPreviousSession、不會跑 agent；n8n 範例對非 message 事件回 `{"skip": true}`。
+- 金鑰：`api_key`（Odoo→n8n 簽章，選填）和推送金鑰（n8n→Odoo Bearer）是兩把不同的金鑰。n8n 聯絡人沒有簽章金鑰也能用（表單顯示提示、測試連線照常可按）；openai 型仍必須有 API 金鑰。
+- Chat Trigger 的限制：流程用 `sessionId` 自己記憶，不看 Odoo 的 `history`／`system_prompt`／`events`，也驗不了來源；使用者的圖片／檔案只在 `message.attachments`（簽名網址），流程要用得自己下載（PROTOCOL.md「n8n Chat Trigger」一節）。
 
 ## 回覆呈現（兩種後端共用）
 
@@ -191,7 +198,7 @@ Authorization: Bearer <push key>      # 對應到某個 AI 聯絡人
 - `woow.ai.job`、`woow.ai.call.log`：只有系統管理員。
 - 私訊內容：只有成員看得到（Odoo 原生）；呼叫紀錄預設不存內容。
 - 後端網址只有系統管理員能改；`endpoint_url` 必須是 https（`localhost`／叢集內完整寫出的 `*.svc.cluster.local` 例外，給 PaaS 內網用；短服務名不接受）。
-- 「測試連線」按鈕只限系統管理員：openai `GET {endpoint}/models`（不送 chat completion，否則 Hermes 會真的跑一次 agent 和工具）、n8n 簽章過的 ping；畫面只顯示 HTTP 狀態和一句說明，不顯示上游回應內容。
+- 「測試連線」按鈕只限系統管理員：openai `GET {endpoint}/models`（不送 chat completion，否則 Hermes 會真的跑一次 agent 和工具）、n8n 的 ping（有密鑰才簽章）；畫面只顯示 HTTP 狀態和一句說明，不顯示上游回應內容。
 
 ## woow_ai_contact_livechat
 
@@ -230,7 +237,7 @@ Authorization: Bearer <push key>      # 對應到某個 AI 聯絡人
 - **轉址**：後端呼叫（`_http_post`）與測試連線都不跟隨轉址（`allow_redirects=False`），3xx 視為 `http_error`；否則 307／308 會把整段對話、身分與簽名網址用純 http 重送到別的主機，301／302 會改成 GET 打任意網址。
 - **串流總時限**：沒有 chunked 編碼時 urllib3 一次讀 1024 位元組會等到湊滿或 EOF，小 keepalive 一直重設 socket 逾時，chunk 邊界的時限檢查就失效；`_StreamWatchdog` 在總時限到時 `shutdown` socket，讀取立刻返回並記 timeout。
 - **重試**：`max_retries`（預設 1）次，只對連線失敗（請求沒送出：連不上、找不到主機、連線逾時，即 urllib3 `NewConnectionError`／`ConnectTimeout`；收完請求後斷線的 `ProtocolError`／`RemoteDisconnected` 不算）、HTTP 429、503，3 秒、10 秒後，不超過總時限；讀取逾時與其他 HTTP 錯誤不重試（n8n 不保證冪等、Hermes 工具可能已執行）。
-- **n8n 回應**寬鬆接受 `{"reply": "文字"}` 與 n8n 的 item 陣列 `[{...}]`；`replies` 最多 10 則。
+- **n8n 回應**寬鬆接受 `{"reply": "文字"}`、`{"output": "文字"}` 與 n8n 的 item 陣列 `[{...}]`；`replies` 最多 10 則。
 - **openai `metadata`**：攤平成字串鍵、字串值（`odoo_user_id`、`odoo_email`…，最多 16 鍵、每值 512 字），符合 OpenAI 官方的格式要求；LiteLLM／Hermes 不會送給模型。OpenAI 官方 API 在沒有 `store` 時仍可能拒絕 `metadata`，直接接 OpenAI 官方時要注意（目前沒有開關）。
 - **沒有做的**：Hermes header 會話模式（定案 23，維持定案 5 每次送最近 N 則）；`livechat_allowed` 開關（定案 25）；`openai_extra_params`（temperature 等參數交給後端／LiteLLM 設定）。
 - **附件 mimetype**：`ir.attachment` 會把 `application/octet-stream` 依內容重新判斷（HTML 會變回 `text/html`），所以建立後再單獨寫一次 mimetype（不帶內容時不會重判）。

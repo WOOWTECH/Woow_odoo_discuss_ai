@@ -19,12 +19,12 @@ Odoo 18 模組：讓內部用戶與 portal 用戶在 Discuss 裡和「AI 聯絡�
 討論 → 配置 → AI 聯絡人 → 新增（限系統管理員；同一個選單下還有「回覆工作」「呼叫紀錄」）。
 
 - **後端**：OpenAI 相容或 n8n webhook。
-- **後端網址**：OpenAI 相容填以 `/v1` 結尾的基本網址；n8n 填完整 webhook 網址。必須是 https（`localhost`、`*.svc.cluster.local` 可用 http）。
-- **API 金鑰／簽章金鑰**：只寫不讀，存檔後不再顯示。OpenAI 相容：Bearer 金鑰；n8n：HMAC 簽章金鑰（不會送出）。
-- **模型**（選填）、**系統提示詞**（選填，留空交給後端）、**歷史訊息數**（預設 50）、**逾時**（整個回覆，預設 300 秒）。
+- **後端網址**：OpenAI 相容填以 `/v1` 結尾的基本網址；n8n 填完整的正式 webhook 網址（Chat Trigger 是 `…/webhook/<id>/chat`）。必須是 https（`localhost`、`*.svc.cluster.local` 可用 http）。
+- **API 金鑰／簽章金鑰**：只寫不讀，存檔後不再顯示。OpenAI 相容（必填）：Bearer 金鑰；n8n（選填）：HMAC 簽章金鑰（不會送出），留空＝請求不簽章，例如公開的 n8n Chat Trigger。
+- **模型**（選填）、**系統提示詞**（選填，留空交給後端）、**歷史訊息數**（預設 50）、**逾時**（整個回覆，預設 300 秒；n8n 每次最多 90 秒）。
 - **串流回覆**（OpenAI 相容，預設開）：SSE 串流，連續 30 秒沒有資料才算失敗，避免 Cloudflare 約 100 秒的中斷。
 - **重試次數**（0–2，預設 1）：只對連線失敗、HTTP 429、503；讀取逾時與 502／504／524 不重送（後端可能已在執行工具）。
-- **測試連線**按鈕：OpenAI 相容送 `GET /models`、n8n 送簽章過的 `ping`，只顯示 HTTP 狀態，不會真的跑 AI。
+- **測試連線**按鈕：OpenAI 相容送 `GET /models`；n8n 送 `{"event": "ping", ..., "action": "loadPreviousSession", "sessionId": "woow-ai-ping-<id>"}`（有密鑰才簽章），Chat Trigger 不會因此執行 agent。只顯示 HTTP 狀態，不會真的跑 AI。
 - **使用者傳送的文件**（OpenAI 相容，「檔案」分頁）：`PDF 以檔案送、其他文件以文字送`（預設，LiteLLM／OpenAI）｜`全部擷取文字`（Hermes 等不收 file 的後端；掃描檔 PDF 沒有文字）｜`只給下載連結`（舊行為）。上限見 [docs/PROTOCOL.md](docs/PROTOCOL.md#documents)。
 - **招呼語**／**錯誤訊息**、**下載網域白名單**（每行一個，可用 `*.example.com`）與**檔案大小上限**（預設 20 MB）。
 - **可使用的群組**：預設內部用戶＋portal；留空＝不能私訊（只給 Live Chat 用），機器人聯絡人保持封存，不會自動建私訊、也搜尋不到。
@@ -46,7 +46,11 @@ Odoo 18 模組：讓內部用戶與 portal 用戶在 Discuss 裡和「AI 聯絡�
 後端網址 `https://<LiteLLM 主機>/v1`，API 金鑰填 LiteLLM virtual key（建議限制可用模型），模型填 LiteLLM 模型名稱。
 
 ### n8n
-建立「Webhook（開 Raw Body）→ Code（驗簽）→ AI Agent → Respond to Webhook」流程（見 [docs/PROTOCOL.md](docs/PROTOCOL.md#minimal-n8n-workflow)），把正式 webhook 網址填進後端網址、隨機產生的密鑰填進「簽章金鑰」。Odoo 不送 `Authorization`，只送 `X-Woow-Timestamp`＋`X-Woow-Signature`（對實際送出的 body 位元組算 HMAC-SHA256，時間窗 300 秒）；驗簽失敗請回非 200。經 Cloudflare 對外網址超過約 100 秒會 524：長流程請先回 `{"skip": true}`，再用推送 API 回覆。n8n 的 Executions 會存 webhook 內容（含對話），請設保留期限。
+n8n 的請求與回覆格式和 `im_livechat_ai` 18.0.1.2.0 相同，同一個工作流程兩個模組都能用。
+
+**既有的 Chat Trigger（託管聊天）工作流程**（公開聊天，例如智居顧問）：後端網址填 `https://<n8n>/webhook/<webhookId>/chat`、簽章金鑰留空，按「測試連線」（HTTP 200）即可。Odoo 會帶 Chat Trigger 讀的 `action`、`sessionId`、`chatInput`，agent 回的 `{"output": "..."}` 發成一則訊息（markdown 連結與粗體會顯示）。限制：這種流程用 `sessionId` 自己記憶、不看 Odoo 送的歷史、提示詞與事件（轉真人期間客服說的話它看不到），也無法驗證請求來自 Odoo。使用者的圖片／檔案在 `message.attachments`（1 小時簽名網址），流程要用的話自己加 HTTP Request 節點下載。細節見 [docs/PROTOCOL.md](docs/PROTOCOL.md#n8n-chat-trigger-hosted-chat-workflows)。
+
+**新建工作流程**：建立「Webhook（開 Raw Body）→ Code（驗簽）→ AI Agent → Respond to Webhook」流程（見 [docs/PROTOCOL.md](docs/PROTOCOL.md#minimal-n8n-workflow)），把正式 webhook 網址填進後端網址、隨機產生的密鑰填進「簽章金鑰」。Odoo 不送 `Authorization`；有密鑰時只送 `X-Woow-Timestamp`＋`X-Woow-Signature`（對實際送出的 body 位元組算 HMAC-SHA256，時間窗 300 秒）；驗簽失敗請回非 200。經 Cloudflare 對外網址超過約 100 秒會 524：長流程請先回 `{"skip": true}`，再用推送 API 回覆。n8n 的 Executions 會存 webhook 內容（含對話），請設保留期限。
 
 ## 使用
 
