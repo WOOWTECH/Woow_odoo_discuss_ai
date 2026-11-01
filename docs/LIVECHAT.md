@@ -1,7 +1,7 @@
 # woow_ai_contact_livechat：Live Chat 橋接
 
 `woow_ai_contact_livechat`（`depends: woow_ai_contact, im_livechat`，`auto_install: True`）讓 Live Chat 頻道「選一個 AI 聯絡人」來回覆訪客，並取代 `im_livechat_ai` 1.1.0。
-重現 1.1.0 D 包的轉真人／暫停／關鍵字轉真人，修掉 L1 沙盒實測量到的坑（見「與 1.1.0 的差異」）。商品查詢工具不保留（負責人定案 10）：查價交給後端（Hermes／n8n＋Odoo MCP）。
+重現 1.1.0 D 包的轉真人／暫停，修掉 L1 沙盒實測量到的坑（見「與 1.1.0 的差異」）；18.0.1.2.0 起**何時轉真人由後端判斷**（負責人定案 40），關鍵字只是選用的前置篩選。商品查詢工具不保留（負責人定案 10）：查價交給後端（Hermes／n8n＋Odoo MCP）。
 
 ## 設定
 
@@ -12,8 +12,8 @@ Live Chat ＞ 設定 ＞ 頻道 ＞「AI 聯絡人」分頁（Live Chat 管理�
 | `woow_ai_enabled` AI 回覆 | 關 | 開啟時必須選 AI 聯絡人，且聯絡人有效 |
 | `woow_ai_contact_id` AI 聯絡人 | — | 可選**任一**有效的 AI 聯絡人（定案 25，沒有「可用於 Live Chat」開關）。Live Chat 管理員只看得到名稱；網址、金鑰、提示詞只有系統管理員看得到 |
 | `woow_ai_pause_minutes` 真人回覆後 AI 暫停（分鐘） | 30 | 1–1440，不論 AI 開關都檢查 |
-| `woow_ai_handoff_keywords` 轉真人關鍵詞 | `找真人,真人客服,轉真人,真人服務,轉人工,人工客服,找客服,專人服務,talk to a human,human agent,real person,live agent` | 逗號／全形逗號／頓號／換行分隔；英文整字比對、不分大小寫；空白＝不做關鍵字轉真人 |
-| `woow_ai_handoff_message` 轉真人訊息 | `已幫您通知客服，請稍候。` | |
+| `woow_ai_handoff_keywords` 轉真人關鍵詞 | 空白（18.0.1.2.0 起） | **選填的前置篩選**：訪客訊息含其中一個就直接轉真人、不呼叫後端。逗號／全形逗號／頓號／換行分隔；英文整字比對、不分大小寫。空白＝交給後端判斷。18.0.1.2.0 之前建立的頻道保留原值（舊預設 `找真人,真人客服,轉真人,真人服務,轉人工,人工客服,找客服,專人服務,talk to a human,human agent,real person,live agent`），要完全交給後端請清空 |
+| `woow_ai_handoff_message` 轉真人訊息 | `已幫您通知客服，請稍候。` | 關鍵字轉真人時、或後端決定轉接但沒寫回覆時張貼 |
 | `woow_ai_paused_message` AI 暫停提示 | `真人客服會盡快回覆您，請稍候。在那之前 AI 助理暫停回覆。` | 空白＝不提示 |
 
 只給 Live Chat 用的 AI 聯絡人，`allowed_group_ids` 留空：不能私訊、機器人 partner 保持封存。橋接加了一條 record rule，讓 Live Chat 管理員讀得到所有 AI 聯絡人（只讀）。
@@ -37,10 +37,16 @@ AI 聯絡人表單的「存取」分頁會列出用到它的 Live Chat 頻道。
 ## 轉真人、暫停、提示、恢復
 
 1. **客服發言**（comment）→ 這段對話暫停 `woow_ai_pause_minutes` 分鐘。只延長、不縮短；只影響這段對話；到期自動恢復（恢復後下一則訪客訊息的上下文會包含暫停期間沒回的問題）。只「加入」對話不會暫停。
-2. **訪客說轉真人關鍵詞** → 建 handoff 工作並暫停：AI 張貼轉真人訊息（不呼叫後端，後端沒設定也能轉），客服收到 OdooBot 私訊（離線也看得到）＋黏著通知（在線者），內容含對話連結與「輸入 /ai on 可立即恢復 AI」。暫停中再說關鍵字不會再發。handoff 會取代較早的 reply 工作，補救排程不會重發。
-3. **暫停中訪客又發訊息**（新增）→ 若最近 5 分鐘內沒有客服發言（客服不在線上聊），AI 張貼一次 `woow_ai_paused_message`，並再通知客服「訪客在等待回覆」。每次暫停最多一次；轉真人訊息本身就算提示。客服正在聊時不插話。
-4. **立即恢復**（新增）→ 客服在對話中輸入 `/ai on`（`/ai off` 暫停、`/ai` 看狀態；只在 Live Chat 對話出現），或在「Live Chat ＞ 對話紀錄」的對話表單按「立即恢復 AI」。恢復時，如果最後一則真人訊息是訪客的（沒人回），馬上排一個回覆工作。只有內部使用者（Live Chat 客服或對話成員）能用。
-5. 工作在呼叫後端前、張貼前（鎖住對話列之後）都再檢查暫停、是否換了聯絡人或關了 AI；後端回答途中客服插話，答案丟掉。
+2. **後端決定轉真人**（定案 40，主要方式；QA D11／D12「可以轉接專人嗎」「我要跟人講話」關鍵字都沒命中、模型還說「我無法轉接」）→ 訪客訊息照常交給後端，後端的回答表示要轉人：
+   - openai（LiteLLM、Hermes）：回覆最後加一行 `[[handoff]]`（不分大小寫，可有空白、反引號或 markdown 跳脫）；n8n：回 `"handoff": true`（可在 item list 裡），可加 `"handoff_reason"`，Chat Trigger 只能回 `output` 時也用 `[[handoff]]`。
+   - Odoo 拿掉標記，先張貼回覆文字（沒有文字就張貼「轉真人訊息」），然後走同一條轉真人路徑：暫停、不再加暫停提示、記事件（`source = backend`、原因）、通知客服（OdooBot 私訊＋黏著通知；有原因時寫在通知裡）。後端回答途中客服插話，答案照樣丟掉、不轉。
+   - 只有固定的轉真人訊息會從歷史拿掉；模型自己寫的回覆（標記已拿掉）留在歷史當它自己的話。事件文字告訴模型「你（AI）在回覆中請求轉接，已通知真人客服」。
+   - **Odoo 加的唯一提示文字**：有客服（Live Chat 頻道的操作員有內部使用者）的頻道，openai 請求的 system 訊息最後加一行（`HANDOFF_SYSTEM_LINE`）：「訪客要求真人客服、想跟真人說話時，在回覆最後單獨一行寫 [[handoff]]，系統就會轉接真人客服（不要說無法轉接；只問電話或聯絡方式不算）。When the visitor asks for a human, end your reply with a line [[handoff]] and Odoo hands the conversation to a human operator.」其他（何時主動提議、怎麼說）都屬於後端自己的提示詞。n8n 改看 `channel.livechat.handoff_available`。
+   - 私訊（Discuss DM）不變：沒有這行、`[[handoff]]` 原樣留在回覆裡、n8n 的 `handoff` 忽略。
+3. **訪客說轉真人關鍵詞**（選用的前置篩選，預設空白）→ 建 handoff 工作並暫停：AI 張貼轉真人訊息（不呼叫後端，後端沒設定也能轉），客服收到 OdooBot 私訊（離線也看得到）＋黏著通知（在線者），內容含對話連結與「輸入 /ai on 可立即恢復 AI」。暫停中再說關鍵字不會再發。handoff 會取代較早的 reply 工作，補救排程不會重發。
+4. **暫停中訪客又發訊息**（新增）→ 若最近 5 分鐘內沒有客服發言（客服不在線上聊），AI 張貼一次 `woow_ai_paused_message`，並再通知客服「訪客在等待回覆」。每次暫停最多一次；轉真人訊息本身就算提示。客服正在聊時不插話。
+5. **立即恢復**（新增，不變）→ 客服在對話中輸入 `/ai on`（`/ai off` 暫停、`/ai` 看狀態；只在 Live Chat 對話出現），或在「Live Chat ＞ 對話紀錄」的對話表單按「立即恢復 AI」。恢復時，如果最後一則真人訊息是訪客的（沒人回），馬上排一個回覆工作。只有內部使用者（Live Chat 客服或對話成員）能用。
+6. 工作在呼叫後端前、張貼前（鎖住對話列之後）都再檢查暫停、是否換了聯絡人或關了 AI；後端回答途中客服插話，答案丟掉。
 
 ## 送給後端的內容
 
@@ -63,8 +69,11 @@ AI 聯絡人表單的「存取」分頁會列出用到它的 Live Chat 頻道。
 ```json
 {"id": 42, "type": "livechat",
  "livechat": {"livechat_channel_id": 3, "livechat_channel_name": "官網", "operator_name": "客服小明",
-              "country_code": "TW", "visitor_kind": "guest|portal|employee|partner|public"}}
+              "country_code": "TW", "visitor_kind": "guest|portal|employee|partner|public",
+              "handoff_available": true}}
 ```
+
+`handoff_available`：頻道有客服可以接手（Live Chat 頻道的操作員裡有內部使用者）時為 `true`；這時 workflow 可以回 `"handoff": true` 或在 `output` 結尾寫 `[[handoff]]`（docs/PROTOCOL.md「Live Chat handoff」）。
 
 - 訪客附件照核心：openai 內嵌最近幾則的圖片，文件依 AI 聯絡人的「使用者傳送的文件」（原檔直送／只給連結），其他給 1 小時簽名網址；n8n 每個附件都有簽名網址。頻道關掉 AI 後簽名網址就失效。
 - AI 回覆中的連結：只有 `web.base.url` 與各網站 `domain` 的主機會變成可點連結（核心 `_woow_ai_link_hosts` 鉤子），其他連結只留文字，防提示注入釣魚。
@@ -74,7 +83,7 @@ AI 聯絡人表單的「存取」分頁會列出用到它的 Live Chat 頻道。
 
 | L1 觀察 | 處理 |
 |---|---|
-| 預設關鍵字有單字「客服」「人工」「agent」「operator」，「客服電話幾號」也轉真人、靜音 30 分鐘 | 預設改成片語（上表）。搬移時，頻道若還是 1.1.0 的預設值就換成新預設並寫進搬移報告；自訂值原樣保留 |
+| 預設關鍵字有單字「客服」「人工」「agent」「operator」，「客服電話幾號」也轉真人、靜音 30 分鐘 | 18.0.1.0.0 起預設改片語；18.0.1.2.0 起改由後端判斷（`[[handoff]]`／`"handoff": true`），關鍵字預設空白。搬移時，頻道若還是 1.1.0 的預設值就清空（交給後端）並寫進搬移報告；自訂值原樣保留 |
 | 暫停期間完全沒有提示，沒人接手時訪客可能等 30 分鐘 | 暫停提示（每次暫停一次、客服在聊時不插話）＋再通知客服 |
 | 沒有「立刻恢復 AI」 | `/ai on`、`/ai off`、對話表單按鈕；恢復時回答沒人回的訪客訊息 |
 | 範圍檢查只在 AI 開啟且欄位被寫入時才跑 | 暫停分鐘數一律檢查 1–1440，執行時也夾住 |
@@ -117,7 +126,7 @@ AI 聯絡人表單的「存取」分頁會列出用到它的 Live Chat 頻道。
 - 條件：`im_livechat_ai` 已安裝、版本 ≥ 18.0.1.1.0、舊的每頻道金鑰欄 `ai_api_key` 已不存在（18.0.1.0.x 外洩過的金鑰永不讀）。不符合只記 warning，不做事。1.1.0 的資料一律用 SQL 讀，不依賴它的程式。
 - 要搬的頻道：1.1.0 `ai_enabled` 為 True、或有提示詞、或有機器人 partner（1.1.0 升級時把所有頻道的 AI 關掉，只看開關會漏）。已經有 AI 聯絡人的頻道不重建聯絡人（可重跑）；若狀態還是 `none`（Live Chat 管理員在準備能跑之前就手動選了聯絡人），保留它的聯絡人與設定、記下 `woow_ai_legacy_*`，1.1.0 還開著 → `staged`，1.1.0 已關 → `switched`（沒有東西要切換），否則「完成搬移」會永遠擋在這個頻道。
 - 依 `(ai_model, 提示詞, 機器人名稱, 錯誤訊息, ai_max_history, ai_max_retries)` 分組，每組建一個 openai 型 AI 聯絡人：網址＝`im_livechat_ai.base_url`（去掉結尾 `/` 與 `/chat/completions`，不是 https 就留空）、金鑰＝`im_livechat_ai.api_key`（只寫進 SQL 欄位、不記錄）、模型、提示詞＋1.1.0「沒工具」商品規則原文（換成能查價的後端後由管理員刪掉）、`max_history`、`max_retries`、錯誤訊息、逾時 120 秒、串流、`allowed_group_ids` 空、不記內容。組內第一個頻道的機器人 partner（沒有使用者、不是共用機器人、沒被別的聯絡人用）直接沿用，訪客看到的名字與頭像不變。
-- 頻道寫入：AI 聯絡人、`woow_ai_enabled = False`、暫停分鐘數、關鍵字（1.1.0 預設值換新預設）、轉真人訊息、`woow_ai_legacy_bot_partner_id`、`woow_ai_legacy_enabled`、狀態 `staged`、搬移報告（是否靠商品工具、遺失的 temperature／max tokens、待填的網址或金鑰）。
+- 頻道寫入：AI 聯絡人、`woow_ai_enabled = False`、暫停分鐘數、關鍵字（1.1.0 預設值清空，交給後端判斷）、轉真人訊息、`woow_ai_legacy_bot_partner_id`、`woow_ai_legacy_enabled`、狀態 `staged`、搬移報告（是否靠商品工具、遺失的 temperature／max tokens、待填的網址或金鑰）。
 - **1.1.0 完全不動、繼續回覆**。安裝不等於切換：切換前商品工具仍在。
 
 ### 切換（每個頻道，系統管理員，一筆交易）
@@ -177,10 +186,13 @@ AI 聯絡人表單的「存取」分頁會列出用到它的 Live Chat 頻道。
 
 `woow_ai_contact_livechat/tests/`（全部 mock HTTP，沒有真金鑰；tag `woow_ai_contact_livechat`）：
 
-- `test_handoff_pause.py`：觸發、暫停、轉真人、暫停提示、恢復、客服通知
+- `test_handoff_pause.py`：觸發、暫停、關鍵字轉真人、暫停提示、恢復、客服通知
+- `test_backend_handoff.py`（定案 40）：n8n `handoff: true` 有／沒有文字、item list、`output` 裡的標記、`handoff_available`、openai 標記（拿掉、轉真人、事件）、只有標記、標記變體、沒標記不轉、事件給模型、沒有客服就沒有那行提示、後端回答途中客服插話、新頻道關鍵字空白、設定了關鍵字照舊轉
 - `test_identity_history.py`：作者分類、歷史角色與同事說明、身分、n8n `channel`、連結、附件、未安裝的語言
 - `test_events.py`：轉真人→恢復後通知不在歷史、事件進 system 訊息（openai）與 `events`（n8n）、暫停提示事件、`/ai off`／`/ai on` 事件、上下文之前的事件不送、通知被刪仍保留事件
 - `test_access.py`：權限、約束、從沒裝過 1.1.0、模擬 1.1.0 欄位的共存保護
 - `test_migration.py`：只在裝了 1.1.0 的資料庫跑（否則 skip）：準備、冪等、舊版與舊金鑰欄、共存、切換、搬暫停與工作、拿不到鎖、切回、舊機器人、完成、`__export__`
 
-沙盒（L2 ns，CLI `--workers=0 --stop-after-init`）：乾淨 db 78 項全過（13 項搬移 skip）；裝了 1.1.0 的 db 78 項全過（搬移 13 項實跑）；核心＋橋接一起 187 項全過。另以真提交、背景執行緒、假後端實跑：guest 回覆約 2 秒、轉真人訊息＋OdooBot 通知、暫停中不回、`/ai on` 後回答等待中的問題、n8n 簽章正確且 `channel.livechat` 正確。
+18.0.1.2.0（定案 40，11-01 沙盒 ns `dev-sandbox-odoo-aicontact-1031`，`sbx/sbx-n8n.sh`）：只裝核心 208 項、核心＋橋接 311 項、裝了 im_livechat_ai 1.1.0 的 db 103 項（搬移 18 項實跑）全過；18.0.1.4.0／18.0.1.1.0 升級到新版：舊頻道關鍵字保留、新頻道空白。真 LiteLLM（`chatgpt-pool/gpt-6-sol`，經工作路徑）：「可以轉接專人嗎」「我要跟人講話」→ 模型回覆結尾 `[[handoff]]`、Odoo 拿掉標記並轉真人；「人工智慧是什麼」「你們客服電話幾號」→ 不轉。
+
+更早（L2 ns，CLI `--workers=0 --stop-after-init`）：乾淨 db 78 項全過（13 項搬移 skip）；裝了 1.1.0 的 db 78 項全過（搬移 13 項實跑）；核心＋橋接一起 187 項全過。另以真提交、背景執行緒、假後端實跑：guest 回覆約 2 秒、轉真人訊息＋OdooBot 通知、暫停中不回、`/ai on` 後回答等待中的問題、n8n 簽章正確且 `channel.livechat` 正確。

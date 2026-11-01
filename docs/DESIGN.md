@@ -21,7 +21,7 @@ Odoo 18。讓內部用戶與 portal 用戶在 Discuss 裡和「AI 聯絡人」�
 | `name`、`image_1920`、`description` | 顯示用；`partner_id` 同步名稱與頭像 | 有權使用者 |
 | `partner_id` | 機器人 partner（建立時自動產生，無 user，標籤「AI Contact」）。`active`＝AI 聯絡人有效**且** `allowed_group_ids` 不是空的；AI 聯絡人封存，或群組清空（只給 Live Chat 用），partner 就保持封存，一般「開始對話」搜尋找不到 | 有權使用者 |
 | `active`、`sequence` | | |
-| `allowed_group_ids` | 可使用的群組；預設 `base.group_user`＋`base.group_portal`。**空集合＝不能私訊**（不自動建私訊、「開始對話」搜不到、portal、推送都不列；只給 Live Chat 等橋接用） | 系統管理員 |
+| `allowed_group_ids` | 可使用的群組；預設 `base.group_user`（18.0.1.5.0 起，QA C；portal 使用者要由管理員明確加 `base.group_portal`，之前建立的聯絡人不變）。**空集合＝不能私訊**（不自動建私訊、「開始對話」搜不到、portal、推送都不列；只給 Live Chat 等橋接用） | 系統管理員 |
 | `backend_type` | `openai`（Hermes／LiteLLM）或 `n8n` | 系統管理員 |
 | `endpoint_url` | openai：base URL（…/v1）；n8n：webhook 完整網址 | 系統管理員 |
 | `api_key` | 只寫不讀：非儲存 compute／inverse 欄位，實際值存在只用 SQL 存取的欄 `woow_ai_contact.api_key_secret`（不是 ORM 欄位，任何 read／export／表單都拿不到）；另有 `api_key_set` 顯示是否已設定。**端點換到另一台伺服器（scheme／主機／埠不同，或清空）或換後端類型、同一次寫入又沒給新金鑰 → 已存的金鑰自動移除**（不會把公司 LiteLLM 金鑰送到新主機，也不會把 n8n 簽章金鑰當 Bearer 送出；原本沒網址、之後才填的不算，給搬移用）；表單沒有金鑰時顯示提示。openai：Bearer 金鑰；**n8n：HMAC 簽章金鑰，表單標籤「簽章金鑰」，永遠不送出** | 系統管理員 |
@@ -74,6 +74,7 @@ Odoo 18。讓內部用戶與 portal 用戶在 Discuss 裡和「AI 聯絡人」�
 `discuss.channel` 覆寫張貼後的鉤子（與 `im_livechat_ai` 相同位置 `_notify_thread`，或 `message_post` 後）：
 - `channel_type == 'chat'`，成員中有一位是 AI 聯絡人的 `partner_id`，作者不是該機器人 partner；
 - 作者的 user 屬於 `allowed_group_ids`（否則回一句「您沒有使用這個 AI 聯絡人的權限」，不呼叫後端）；
+- AI 聯絡人已封存時（18.0.1.5.0 起，QA C）：私訊裡有人寫訊息，機器人每段對話張貼一次固定訊息「這個 AI 聯絡人已停用。」（依作者語言翻譯，不呼叫後端，`discuss.channel.woow_ai_inactive_notice_sent`；聯絡人恢復有效時清掉，再封存會再提示一次）；Live Chat 不提示（橋接自己處理）；
 - `message_type == 'comment'`，有文字或附件。
 - 建 job（kind=reply）。
 
@@ -187,7 +188,7 @@ Authorization: Bearer <push key>      # 對應到某個 AI 聯絡人
   - **只自動建一次**（定案 34）：`onboarded_user_ids`（每人每個 AI 聯絡人一筆）。使用者取消置頂／關掉後不會自己回來；`_get_or_create_chat`（推送、portal、搜尋開啟都經過它）會重新置頂並送 `Store` 給使用者，也會記成已建。升級到 18.0.1.3.0 的搬移把「已經有私訊」的使用者都記成已建（不會有第二則招呼語）。
   - **搜尋**（定案 31）：Odoo 18 的「開始對話」（`ChannelSelector`，手機版聊天分頁的按鈕也是它）與指令面板都呼叫 `res.partner.im_search`，原生只搜內部使用者；擴充後另外加上「名稱符合、目前使用者有權使用（`_user_allowed`）」的 AI 聯絡人機器人 partner（`Store` 結果合併）。群組為空或沒權限的永遠搜不到。選了之後前端呼叫 `discuss.channel.channel_get(partners_to=[機器人])`：覆寫後只要對象是 AI 聯絡人的機器人，就先檢查權限（沒權限丟 `AccessError`「您沒有權限使用這個 AI 聯絡人」，不建頻道），再走 `_get_or_create_chat`（招呼語、上傳旗標、已建記錄、`force_open` 設 `fold_state = open`）；其他對象照原生。`_get_or_create_chat` 自己建頻道時帶 `woow_ai_channel_get` context 略過這段。
   - **狀態**（定案 35）：`res.partner._compute_im_status` 對 AI 聯絡人的機器人（含只給 Live Chat 用的封存機器人）回 `bot`，前端顯示綠色愛心（同 OdooBot，`mail` 的 `res.partner` 對 `base.partner_root` 的做法）。
-- **設定選單**（定案 37）：AI 聯絡人、回覆工作、呼叫紀錄從「設定」（`base.menu_administration`）搬到「討論 › 配置」（`mail.menu_configuration`，與通知、語音及視訊、預設回應同一層，sequence 30–32），各自 `groups = base.group_system`（權限照舊）；舊的上層選單 `menu_woow_ai_root` 升級時刪除。
+- **設定選單**（定案 37）：AI 聯絡人、回覆工作、呼叫紀錄從「設定」（`base.menu_administration`）搬到「討論 › 配置」（`mail.menu_configuration`，與通知、語音及視訊、預設回應同一層，sequence 30–32），各自 `groups = base.group_system`（權限照舊）；舊的上層選單 `menu_woow_ai_root` 升級時刪除。18.0.1.5.0 起（QA C：內部使用者用網址 `/odoo/action-woow_ai_contact.action_woow_ai_contact` 看得到名稱與說明）視窗動作也設 `groups_id = base.group_system`，且 `woow.ai.contact` 的 `web_search_read`／`web_read`／`web_read_group`（網頁清單與表單的讀取）只給系統管理員（`_woow_ai_ui_allowed`；橋接另外開放 Live Chat 管理員，他們要幫頻道選 AI 聯絡人）。私訊、portal、推送都走 ORM，不受影響；讀取權限（ACL＋record rule）不變。
 - **portal**：第一次進 `/my`（`CustomerPortal.home` 覆寫）就呼叫同一個 `_woow_ai_onboard`（定案 36，同樣只建一次）；卡片與 `/my/ai` 不變。不由核心自己做聊天頁（不採用 E2E 的建議）：Odoo 18 原生就有 `/discuss/channel/<id>`（`auth=public`，沙盒映像 `mail/controllers/discuss/public_page.py` 已確認）。`/my` 首頁卡片「AI 聯絡人」（portal 計數器 `woow_ai_contact_count`，沒有可用的 AI 聯絡人就不顯示）→ `/my/ai`（卡片清單）→ `/my/ai/<contact_id>/open` 找或建私訊後導到 `/discuss/channel/<id>`（Odoo 原生公開 Discuss 畫面，附件上傳／圖片預覽皆為 Odoo 原生）；有裝 `cs_portal_discuss` 時才加 `?discussions=1`（沒裝時 Odoo 會對未知參數記 warning）。內部用戶改導到後台 `/odoo/discuss?active_id=discuss.channel_<id>`。
 - AI 私訊一律設 `allow_public_upload = True`：Odoo 的 `/mail/attachment/upload` 對非內部用戶只允許在有開這個旗標的頻道上傳（沙盒實測：沒開時 portal 上傳回 403「本頻道不允許上載附件」）。私訊只有兩個成員，開了不擴大存取範圍。
 - 「開始對話」搜尋只列出自己有權使用的 AI 聯絡人（見上）；權限另外仍以 `allowed_group_ids` 在開啟與觸發回覆時把關。

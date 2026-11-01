@@ -13,7 +13,10 @@ Each AI contact has one backend:
 | `n8n` | full production webhook URL (a Chat Trigger: `<n8n>/webhook/<webhookId>/chat`) | n8n "Webhook" node, or an existing n8n "Chat Trigger" workflow |
 
 The n8n request and answers are the same as `im_livechat_ai` 18.0.1.2.0
-(Live Chat), so one n8n workflow works with both modules.
+(Live Chat), so one n8n workflow works with both modules. Added in
+`woow_ai_contact` 18.0.1.5.0 for the Live Chat handoff (owner decision 40,
+to be aligned in `im_livechat_ai`): the n8n answer field `handoff` and the
+`[[handoff]]` reply marker.
 
 The endpoint must be `https://`. Plain `http://` is accepted only for
 `localhost`, `127.0.0.1`, `::1` and in-cluster hosts written in full,
@@ -308,6 +311,40 @@ list of `{"type": "text"}` parts).
  "usage": {"prompt_tokens": 812, "completion_tokens": 64, "total_tokens": 876}}
 ```
 
+#### Live Chat: handing the visitor to a human (`[[handoff]]`)
+
+In **Live Chat** conversations (bridge module, owner decision 40) the backend
+decides when the visitor wants a person. The model ends its reply with the
+marker `[[handoff]]` (on its own line or at the end; case insensitive, spaces
+inside, backticks or markdown escapes `\[\[handoff\]\]` are accepted too):
+
+```text
+好的，我幫您轉接真人客服，請稍候。
+[[handoff]]
+```
+
+Odoo removes the marker (the visitor never sees it), posts the rest of the
+reply and runs the handoff: the AI pauses for the channel's pause minutes, the
+operators get the OdooBot message and the sticky notification, and a
+`handoff` conversation event is recorded (sent to the model afterwards as a
+fact). A reply that is only the marker posts the channel's *AI Handoff
+Message* (default 「已幫您通知客服，請稍候。」).
+
+So the model knows about the marker, the openai request of a Live Chat channel
+**that has operators** gets one system line at the end of the system message:
+
+```text
+訪客要求真人客服、想跟真人說話時，在回覆最後單獨一行寫 [[handoff]]，系統就會轉接真人客服（不要說無法轉接；只問電話或聯絡方式不算）。When the visitor asks for a human, end your reply with a line [[handoff]] and Odoo hands the conversation to a human operator.
+```
+
+This line is the **only** prompt text Odoo adds for the handoff; everything
+else (when to offer a person, what to say) belongs to the backend's own
+prompt. Direct chats (Discuss DMs) get no such line and their replies are
+posted untouched (a `[[handoff]]` there stays in the text). The channel's
+*AI Handoff Phrases* are an optional pre-filter (empty by default): a visitor
+message containing one of them is handed over at once, without calling the
+backend.
+
 `usage` (when given) is stored in the call log (`prompt_tokens`,
 `completion_tokens`, `total_tokens`; `input_tokens` / `output_tokens` are
 accepted too, the total is their sum when missing; 0 when not given). In a
@@ -367,7 +404,8 @@ the earlier context, unchanged (the welcome message and pushes included).
 Several quick messages in a row get **one** call, with all of them in the
 context. Live Chat channels (bridge module) send `"type": "livechat"` and a
 `livechat` object in `channel` (fields and the visitor identity rows: see
-docs/LIVECHAT.md). Live Chat visitors are often anonymous: when
+docs/LIVECHAT.md), including `"handoff_available": true` when the channel has
+operators to hand the visitor to (see *Live Chat handoff* below). Live Chat visitors are often anonymous: when
 `channel.type` is `livechat` or `user.is_guest` is true, give the model public
 data tools only.
 
@@ -434,7 +472,7 @@ HTTP 200 with JSON, synchronously (the call waits up to *Timeout*, at most
   of `skip`, `replies`, `reply`, `output` wins.
 - For convenience a bare string (`{"reply": "text"}`) and an n8n item list
   (`[{"reply": …}]`, `[{"output": …}]`; the first item is used) are accepted too.
-- Anything else (non-200, not JSON, no `reply`/`replies`/`skip`/`output`, empty reply)
+- Anything else (non-200, not JSON, no `reply`/`replies`/`skip`/`output`/`handoff`, empty reply)
   is an error: the user gets the error message, the call log keeps the status.
   **When the agent fails, answer non-200** (for example 502 with
   `{"error": "agent_failed"}`), not 200 with an apology text: only then do
@@ -462,6 +500,29 @@ Put the production webhook URL into the AI contact's *Endpoint URL* and the
 signing secret into *Signing Secret*. n8n stores executions with their webhook
 body (the conversation): set an execution retention period, or turn off saving
 successful executions.
+
+### Live Chat handoff (`handoff`)
+
+In Live Chat conversations the workflow decides when the visitor goes to a
+human (owner decision 40; Odoo only checks optional admin phrases before
+calling it). When `channel.livechat.handoff_available` is true, answer:
+
+```json
+{"output": "好的，我幫您轉接真人客服，請稍候。", "handoff": true, "handoff_reason": "訪客要求專人"}
+```
+
+- `handoff` must be the JSON boolean `true` (top level, or in the first item
+  of an n8n item list `[{…}]`); `handoff_reason` (optional string, at most 300
+  characters kept) is shown to the operators and stored on the event.
+- The reply text in the same answer (`reply`, `replies` or `output`) is posted
+  first; then Odoo pauses the AI, alerts the operators and records a
+  `handoff` event. `{"handoff": true}` alone (no text) posts the channel's
+  *AI Handoff Message*. With `handoff`, `skip` is ignored.
+- A Chat Trigger workflow can only return `output`: end it with the marker
+  line `[[handoff]]` instead (same rule as the openai backends, see
+  *Live Chat: handing the visitor to a human*); the marker is removed.
+- In direct chats (not Live Chat) `handoff` is ignored and the text is posted
+  as usual; `{"handoff": true}` without text is an empty reply there.
 
 ### n8n Chat Trigger (hosted chat) workflows
 
