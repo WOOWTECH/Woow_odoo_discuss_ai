@@ -95,7 +95,8 @@ class WoowAiJob(models.Model):
         message = contact._post_text(channel, text)
         minutes = livechat_channel._woow_ai_pause_minutes_value()
         # the notice is a conversation event (a fact for the model), not the AI's words
-        channel._woow_ai_log_event('handoff', message=message, trigger=self.message_id, minutes=minutes)
+        channel._woow_ai_log_event('handoff', message=message, trigger=self.message_id, minutes=minutes,
+                                   source='keyword')
         self._finish('done', False, reply_message=message or None)
         self._supersede_older()
         commit_step()
@@ -103,6 +104,47 @@ class WoowAiJob(models.Model):
             'The visitor in "%(name)s" asks for a human. The AI is paused for %(minutes)s minutes: please '
             'take over. Type /ai on in the conversation to resume the AI now.',
             name=ch.display_name, minutes=minutes))
+        commit_step()
+
+    def _process_backend_handoff(self, commit_step, messages, reason=None):
+        """The backend decided the visitor wants a human (owner decision 40):
+        its reply text (already posted as ``messages``) or, without text, the
+        channel's handoff message; then pause, event and operator alert, as
+        for a handoff phrase. The caller holds the channel row lock and
+        checked that the AI is not paused and still answers."""
+        if not self._woow_ai_is_livechat_job():
+            return super()._process_backend_handoff(commit_step, messages, reason=reason)
+        channel = self.channel_id.sudo()
+        contact = self.contact_id.sudo()
+        livechat_channel = channel.livechat_channel_id
+        notice = None
+        if not messages:
+            text = (livechat_channel.woow_ai_handoff_message or '').strip() or DEFAULT_HANDOFF_MESSAGE
+            notice = contact._post_text(channel, text) or None
+            messages = notice or self.env['mail.message']
+        minutes = livechat_channel._woow_ai_pause_minutes_value()
+        channel._woow_ai_pause(minutes)
+        # the reply / the notice tells the visitor; no paused notice on top of it
+        channel.woow_ai_pause_notice_sent = True
+        # only the fixed notice is left out of the history: a reply the model wrote stays its own words
+        channel._woow_ai_log_event('handoff', message=notice, trigger=self.message_id, minutes=minutes,
+                                   source='backend', reason=reason)
+        self._finish('done', False, reply_message=messages.sorted('id')[-1:] or None)
+        self._supersede_older()
+        commit_step()
+
+        def text(ch, _tz):
+            if reason:
+                return ch.env._(
+                    'The AI handed the visitor in "%(name)s" over to a human (%(reason)s). The AI is paused for '
+                    '%(minutes)s minutes: please take over. Type /ai on in the conversation to resume the AI now.',
+                    name=ch.display_name, reason=reason, minutes=minutes)
+            return ch.env._(
+                'The visitor in "%(name)s" asks for a human. The AI is paused for %(minutes)s minutes: please '
+                'take over. Type /ai on in the conversation to resume the AI now.',
+                name=ch.display_name, minutes=minutes)
+
+        channel._woow_ai_alert_operators('handoff', text)
         commit_step()
 
     def _notify_failure(self, reason, visitor_told=True):

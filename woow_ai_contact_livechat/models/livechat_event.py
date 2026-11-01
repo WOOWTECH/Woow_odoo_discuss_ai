@@ -31,3 +31,9 @@ class WoowAiLivechatEvent(models.Model):
     trigger_message_id = fields.Many2one('mail.message', string='Visitor Message', ondelete='set null')
     user_id = fields.Many2one('res.users', string='Operator', ondelete='set null')
     minutes = fields.Integer(string='Pause (minutes)')
+    source = fields.Selection([
+        ('keyword', 'Handoff phrase'),
+        ('backend', 'AI backend'),
+    ], string='Decided By', help='Handoff: a handoff phrase of the channel, or the AI backend (n8n '
+                                  '"handoff": true or the [[handoff]] marker). Empty before 18.0.1.2.0: a phrase.')
+    reason = fields.Char(string='Reason', help='Handoff reason given by the backend (n8n "handoff_reason").')

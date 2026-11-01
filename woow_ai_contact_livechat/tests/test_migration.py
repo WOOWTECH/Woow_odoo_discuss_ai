@@ -107,7 +107,10 @@ class TestMigration(LivechatCase):
                           self.chan_a.woow_ai_legacy_enabled), ('staged', False, True))
         self.assertEqual(self.chan_a.woow_ai_legacy_bot_partner_id, self.bot_a)
         self.assertEqual(self.chan_a.woow_ai_pause_minutes, 15)
-        self.assertEqual(self.chan_a.woow_ai_handoff_keywords, DEFAULT_HANDOFF_KEYWORDS)  # the broad default replaced
+        # the broad 1.1.0 default removed: the backend decides the handoff (decision 40)
+        self.assertFalse(self.chan_a.woow_ai_handoff_keywords)
+        self.assertFalse(DEFAULT_HANDOFF_KEYWORDS)
+        self.assertIn('[[handoff]]', self.chan_a.woow_ai_migration_note)
         self.assertIn('product tools', self.chan_a.woow_ai_migration_note)
         self.assertEqual((self.chan_b.woow_ai_handoff_keywords, self.chan_b.woow_ai_handoff_message),
                          ('專人', '專人馬上來'))

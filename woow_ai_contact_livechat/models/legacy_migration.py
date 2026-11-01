@@ -278,8 +278,10 @@ class WoowAiLivechatMigration(models.AbstractModel):
                                 answer=self.env._('yes') if row['ai_enabled'] else self.env._('no')))
         if keywords and keyword_list(keywords) == keyword_list(LEGACY_DEFAULT_HANDOFF_KEYWORDS):
             keywords = DEFAULT_HANDOFF_KEYWORDS
-            notes.append(self.env._('The 1.1.0 default handoff words (single words such as 客服, 人工) were replaced '
-                                    'by phrases: %(keywords)s.', keywords=DEFAULT_HANDOFF_KEYWORDS))
+            notes.append(self.env._('The 1.1.0 default handoff words (single words such as 客服, 人工) were removed: '
+                                    'the AI backend decides when to hand the visitor to a human (it ends its reply '
+                                    'with [[handoff]]). Add phrases in "AI Handoff Phrases" only if you want a '
+                                    'pre-filter.'))
         if row['ai_product_lookup'] or row['ai_product_lookup'] is None:
             notes.append(self.env._('The channel used the 1.1.0 product tools. The new contact has none: its prompt '
                                     'forbids quoting prices until the backend looks them up (Hermes / n8n with Odoo '

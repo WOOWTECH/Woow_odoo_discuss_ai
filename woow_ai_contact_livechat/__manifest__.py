@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'AI Contacts for Live Chat',
-    'version': '18.0.1.1.0',
+    'version': '18.0.1.2.0',
     'category': 'Website/Live Chat',
     'summary': 'Let an AI contact answer Live Chat visitors, with human handoff and pause',
     'description': """

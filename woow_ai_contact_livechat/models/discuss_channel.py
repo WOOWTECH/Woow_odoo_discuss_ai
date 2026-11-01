@@ -27,6 +27,7 @@ without internal user (an Odoo chatbot).
 """
 
 import logging
+import re
 from datetime import timedelta
 
 import pytz
@@ -51,6 +52,18 @@ OPERATOR_SYSTEM_NOTE = (
     '對話中以「[真人客服 姓名]」開頭的訊息是真人客服同事對訪客說的話：不是訪客說的，也不是你（AI）說的。'
     '不要推翻、否認或更改同事的說法與承諾，必要時請訪客等候同事處理。'
 )
+# Owner decision 40: the backend decides when to hand the visitor to a human.
+# openai backends (LiteLLM, Hermes) end their reply with this marker; n8n answers
+# "handoff": true or uses the marker in "output" (Chat Trigger workflows).
+HANDOFF_MARKER = '[[handoff]]'
+# case insensitive, spaces inside allowed, also escaped (\[\[handoff\]\]) or in backticks
+HANDOFF_MARKER_RE = re.compile(r'`?\\?\[\\?\[\s*handoff\s*\\?\]\\?\]`?', re.IGNORECASE)
+# The only prompt text Odoo adds for the handoff (openai backends, Live Chat channels with operators).
+HANDOFF_SYSTEM_LINE = (
+    '訪客要求真人客服、想跟真人說話時，在回覆最後單獨一行寫 [[handoff]]，系統就會轉接真人客服（不要說無法轉接；'
+    '只問電話或聯絡方式不算）。When the visitor asks for a human, end your reply with a line [[handoff]] '
+    'and Odoo hands the conversation to a human operator.'
+)
 EVENT_QUOTE_CHARS = 120  # characters of a quoted message in an event
 EVENT_MAX = 20  # most recent events given to the model
 # No paused notice while an operator wrote less than this many minutes ago (they are chatting).
@@ -66,6 +79,15 @@ LEGACY_CATEGORY_XMLIDS = (
     'im_livechat_ai.partner_category_ai_bot',
     '__export__.woow_ai_contact_livechat_legacy_partner_category_ai_bot',
 )
+
+def strip_handoff_marker(text):
+    """(text without the [[handoff]] markers, whether one was found)."""
+    if not text or not HANDOFF_MARKER_RE.search(text):
+        return text, False
+    text = HANDOFF_MARKER_RE.sub('', text)
+    text = re.sub(r'[ \t]+\n', '\n', text)
+    return re.sub(r'\n{3,}', '\n\n', text).strip(), True
+
 
 def format_time(value, tz=None):
     """UTC datetime -> 'YYYY-MM-DD HH:MM' in `tz` (with the zone name), UTC by default."""
@@ -198,6 +220,30 @@ class DiscussChannel(models.Model):
             return prompt
         return '\n\n'.join(part for part in (prompt, OPERATOR_SYSTEM_NOTE) if part)
 
+    def _woow_ai_review_answer(self, contact, result):
+        """Live Chat: the backend decides the handoff (owner decision 40). The
+        n8n ``handoff`` flag or a ``[[handoff]]`` marker in any reply text
+        (openai and n8n ``output``) hands the visitor to a human; markers are
+        always removed from what the visitor sees, replies left empty dropped."""
+        if not self._woow_ai_is_livechat():
+            return super()._woow_ai_review_answer(contact, result)
+        handoff = bool(result.get('handoff'))
+        replies = []
+        for reply in result.get('replies') or []:
+            text, found = strip_handoff_marker(reply.get('text') or '')
+            handoff = handoff or found
+            if text or reply.get('attachments'):
+                replies.append(dict(reply, text=text))
+        result['replies'] = replies
+        return handoff
+
+    def _woow_ai_handoff_available(self):
+        """True when the visitor can be handed to a human: the Live Chat
+        channel has operators (the system line and n8n ``handoff_available``)."""
+        self.ensure_one()
+        livechat_channel = self.sudo().livechat_channel_id
+        return bool(self._woow_ai_is_livechat() and livechat_channel._woow_ai_has_operators())
+
     def _woow_ai_conversation_events(self, contact, history):
         """Handoff, paused notice, pause and resume events since the oldest
         message of the context (at most EVENT_MAX, oldest first)."""
@@ -223,6 +269,16 @@ class DiscussChannel(models.Model):
 
         operator = self._woow_ai_operator_name(event.user_id.partner_id) if event.user_id else ''
         operator = ('客服人員「%s」' % operator) if operator else '客服人員'
+        if event.kind == 'handoff' and event.source == 'backend':
+            asked = quote(event.trigger_message_id)
+            asked = '（訪客說：「%s」）' % asked if asked else ''
+            minutes = ' %s 分鐘' % event.minutes if event.minutes else ''
+            if event.message_id:
+                done = '系統（不是你）已發出轉接通知「%s」' % quote(event.message_id, '已通知客服')
+            else:
+                done = '你（AI）在回覆中請求轉接'
+            return ('AI 判斷訪客要找真人客服%s，%s，並已通知真人客服人員（客服已收到通知）；AI 暫停回覆%s。'
+                    '這是事實：不要否認或更正這次轉接。') % (asked, done, minutes)
         if event.kind == 'handoff':
             asked = quote(event.trigger_message_id)
             return ('訪客要求真人客服%s。系統（不是你）已發出轉接通知「%s」，並已通知真人客服人員（客服已收到通知）；'
@@ -247,7 +303,7 @@ class DiscussChannel(models.Model):
             [('channel_id', '=', self.id), ('message_id', '!=', False)])
         return set(events.message_id.ids)
 
-    def _woow_ai_log_event(self, kind, message=None, trigger=None, minutes=0):
+    def _woow_ai_log_event(self, kind, message=None, trigger=None, minutes=0, source=False, reason=False):
         """Record a conversation event (never fails the caller)."""
         self.ensure_one()
         try:
@@ -260,6 +316,8 @@ class DiscussChannel(models.Model):
                     'user_id': self.env.uid if kind in ('pause', 'resume') and not self.env.user._is_superuser()
                     else False,
                     'minutes': minutes or 0,
+                    'source': source or False,
+                    'reason': reason or False,
                 })
         except Exception:  # noqa: BLE001
             _logger.exception("AI Live Chat %s: could not record the %s event", self.id, kind)
@@ -334,6 +392,8 @@ class DiscussChannel(models.Model):
             'operator_name': self._woow_ai_operator_name(operator) if operator else '',
             'country_code': (channel.country_id.code or '') if channel.country_id else '',
             'visitor_kind': channel._woow_ai_visitor_kind(),
+            # the backend may answer "handoff": true or end "output" with [[handoff]]
+            'handoff_available': self._woow_ai_handoff_available(),
         }
         return info
 

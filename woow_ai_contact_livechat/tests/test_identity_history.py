@@ -204,6 +204,7 @@ class TestIdentity(LivechatCase):
             'livechat': {
                 'livechat_channel_id': self.livechat.id, 'livechat_channel_name': 'Website',
                 'operator_name': '客服小明', 'country_code': 'TW', 'visitor_kind': 'guest',
+                'handoff_available': True,
             },
         })
         self.assertEqual(payload['user']['visitor_key'], 'guest:%s' % guest.id)

@@ -18,11 +18,17 @@ MANAGER_GROUP = 'im_livechat.im_livechat_group_manager'
 DEFAULT_PAUSE_MINUTES = 30
 MAX_PAUSE_MINUTES = 1440
 
-# Phrases only (L1 finding: the 1.1.0 single words 「客服」「人工」「agent」 turned
-# ordinary questions such as 「客服電話幾號」 into a 30 minute silence).
-DEFAULT_HANDOFF_KEYWORDS = ('找真人,真人客服,轉真人,真人服務,轉人工,人工客服,找客服,專人服務,'
-                            'talk to a human,human agent,real person,live agent')
-# im_livechat_ai 1.1.0 default: replaced by DEFAULT_HANDOFF_KEYWORDS when migrated.
+# Owner decision 40: the AI backend decides when to hand a visitor to a human
+# (n8n "handoff": true, the "[[handoff]]" marker); keywords are only an optional
+# pre-filter of the administrator, empty by default (QA D11/D12: 「可以轉接專人嗎」
+# 「我要跟人講話」 missed every keyword list). Channels created before 18.0.1.2.0
+# keep the phrases they had.
+DEFAULT_HANDOFF_KEYWORDS = ''
+# Former default (18.0.1.0.0-18.0.1.1.0), phrases only (L1 finding: the 1.1.0 single
+# words 「客服」「人工」「agent」 turned 「客服電話幾號」 into a 30 minute silence).
+PREVIOUS_DEFAULT_HANDOFF_KEYWORDS = ('找真人,真人客服,轉真人,真人服務,轉人工,人工客服,找客服,專人服務,'
+                                     'talk to a human,human agent,real person,live agent')
+# im_livechat_ai 1.1.0 default: removed (backend decides) when migrated.
 LEGACY_DEFAULT_HANDOFF_KEYWORDS = '真人,客服,人工,真人客服,human,agent,operator'
 DEFAULT_HANDOFF_MESSAGE = '已幫您通知客服，請稍候。'
 DEFAULT_PAUSED_MESSAGE = '真人客服會盡快回覆您，請稍候。在那之前 AI 助理暫停回覆。'
@@ -88,14 +94,17 @@ class ImLivechatChannel(models.Model):
              'silent in that conversation for this many minutes (1-1440). Operators resume it at once '
              'with the /ai on command.')
     woow_ai_handoff_keywords = fields.Char(
-        string='AI Handoff Phrases', default=DEFAULT_HANDOFF_KEYWORDS, groups=MANAGER_GROUP,
-        help='Separated by commas or new lines. A visitor message containing one of them gets the '
-             'handoff message, pauses the AI and alerts the operators. Latin words match whole words '
-             'only, case insensitive. Prefer phrases ("找真人") over single words ("客服"), which also '
-             'match ordinary questions. Empty: no keyword handoff.')
+        string='AI Handoff Phrases', groups=MANAGER_GROUP,
+        help='Optional. The AI backend decides when the visitor wants a human and hands over by itself '
+             '(it ends its reply with [[handoff]], or n8n answers "handoff": true). Phrases here are an '
+             'extra pre-filter: a visitor message containing one of them is handed over at once, without '
+             'calling the backend. Separated by commas or new lines; Latin words match whole words only, '
+             'case insensitive. Prefer phrases ("找真人") over single words ("客服"), which also match '
+             'ordinary questions. Empty (default): the backend decides.')
     woow_ai_handoff_message = fields.Text(
         string='AI Handoff Message', default=DEFAULT_HANDOFF_MESSAGE, groups=MANAGER_GROUP,
-        help='Posted by the AI when the visitor asks for a human.')
+        help='Posted by the AI when the visitor is handed over to a human: on a handoff phrase, or when '
+             'the backend hands over without writing a reply of its own.')
     woow_ai_paused_message = fields.Text(
         string='AI Paused Notice', default=DEFAULT_PAUSED_MESSAGE, groups=MANAGER_GROUP,
         help='Posted once per pause when the visitor writes while the AI is paused and no operator wrote '
@@ -194,6 +203,12 @@ class ImLivechatChannel(models.Model):
         self.ensure_one()
         minutes = self.sudo().woow_ai_pause_minutes or DEFAULT_PAUSE_MINUTES
         return max(1, min(minutes, MAX_PAUSE_MINUTES))
+
+    def _woow_ai_has_operators(self):
+        """True when this channel has an operator to hand a visitor to (an
+        internal user among its operators)."""
+        self.ensure_one()
+        return any(not user.share for user in self.sudo().user_ids)
 
     def _woow_ai_is_handoff_request(self, text):
         self.ensure_one()

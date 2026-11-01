@@ -6,6 +6,7 @@ import json
 from odoo import Command
 from odoo.tests.common import TransactionCase, new_test_user
 
+from odoo.addons.woow_ai_contact_livechat.models.im_livechat_channel import PREVIOUS_DEFAULT_HANDOFF_KEYWORDS
 from odoo.addons.woow_ai_contact.tests.common import BACKEND_POST, TEST_KEY, http_response, openai_ok  # noqa: F401
 
 
@@ -47,6 +48,8 @@ class LivechatCase(TransactionCase):
             'user_ids': [Command.link(cls.operator_user.id)],
             'woow_ai_enabled': True,
             'woow_ai_contact_id': cls.contact.id,
+            # the keyword pre-filter as configured before decision 40 (new channels: empty)
+            'woow_ai_handoff_keywords': PREVIOUS_DEFAULT_HANDOFF_KEYWORDS,
         })
         cls.Job = cls.env['woow.ai.job']
 

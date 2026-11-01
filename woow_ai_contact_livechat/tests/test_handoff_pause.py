@@ -10,10 +10,10 @@ from odoo.exceptions import AccessError
 from odoo.tests.common import tagged
 
 from odoo.addons.woow_ai_contact_livechat.models.im_livechat_channel import (
-    DEFAULT_HANDOFF_KEYWORDS, DEFAULT_HANDOFF_MESSAGE, DEFAULT_PAUSED_MESSAGE, is_handoff_request,
+    DEFAULT_HANDOFF_MESSAGE, DEFAULT_PAUSED_MESSAGE, is_handoff_request,
 )
 
-from .common import BACKEND_POST, LivechatCase, http_response, openai_ok
+from .common import PREVIOUS_DEFAULT_HANDOFF_KEYWORDS, BACKEND_POST, LivechatCase, http_response, openai_ok
 
 
 @tagged('woow_ai_contact_livechat', 'post_install', '-at_install')
@@ -168,7 +168,7 @@ class TestPause(LivechatCase):
 class TestHandoff(LivechatCase):
 
     def test_default_phrases(self):
-        self.assertEqual(self.livechat.woow_ai_handoff_keywords, DEFAULT_HANDOFF_KEYWORDS)
+        self.assertEqual(self.livechat.woow_ai_handoff_keywords, PREVIOUS_DEFAULT_HANDOFF_KEYWORDS)
         hit = self.livechat._woow_ai_is_handoff_request
         for text in ('我要找真人客服', '請幫我轉人工', '可以找客服嗎', '人工客服在嗎', 'I want to TALK TO A  HUMAN',
                      'live agent please', 'a real person?'):

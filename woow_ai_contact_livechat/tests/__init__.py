@@ -4,3 +4,4 @@ from . import test_identity_history
 from . import test_access
 from . import test_migration
 from . import test_events
+from . import test_backend_handoff
