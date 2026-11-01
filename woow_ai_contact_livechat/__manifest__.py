@@ -13,9 +13,11 @@ Installed automatically when both are installed.
 
 * A Live Chat channel picks one AI contact that answers its visitors
   (guests, portal customers, employees chatting on the website)
-* Human handoff: an operator's message pauses the AI for the conversation;
-  visitor phrases such as "找真人" or "轉人工" send a handoff notice, pause the
-  AI and alert the operators (OdooBot message and sticky notification)
+* Human handoff decided by the backend: the reply ends with "[[handoff]]"
+  (openai backends, n8n "output") or n8n answers "handoff": true; the AI
+  pauses and the operators are alerted (OdooBot message and sticky
+  notification). Optional handoff phrases (empty by default) hand over
+  without calling the backend; an operator's message pauses the AI too
 * A visitor who writes while nobody answers gets one notice; operators resume
   the AI at once with the "/ai on" command or the session's button
 * Operator replies are sent to the backend as labelled colleague replies
