@@ -8,3 +8,4 @@ from . import test_backend
 from . import test_http
 from . import test_dispatch
 from . import test_documents
+from . import test_onboarding

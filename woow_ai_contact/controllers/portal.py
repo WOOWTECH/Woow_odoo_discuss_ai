@@ -9,6 +9,15 @@ from odoo.addons.portal.controllers.portal import CustomerPortal
 
 class WoowAiContactPortal(CustomerPortal):
 
+    @http.route()
+    def home(self, **kw):
+        # like the backend (res.users._init_messaging): the first visit of the
+        # portal home creates the chats with the AI contacts the user may use
+        user = request.env.user
+        if not user._is_public():
+            user._woow_ai_onboard()
+        return super().home(**kw)
+
     def _prepare_home_portal_values(self, counters):
         values = super()._prepare_home_portal_values(counters)
         if 'woow_ai_contact_count' in counters:

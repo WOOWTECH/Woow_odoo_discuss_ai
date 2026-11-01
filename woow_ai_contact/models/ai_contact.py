@@ -152,6 +152,13 @@ class WoowAiContact(models.Model):
     )
     max_download_mb = fields.Integer(string='Max File Size (MB)', default=DEFAULT_MAX_DOWNLOAD_MB,
                                      groups='base.group_system')
+    onboarded_user_ids = fields.Many2many(
+        'res.users', 'woow_ai_contact_onboarded_user_rel', 'contact_id', 'user_id',
+        string='Onboarded Users', readonly=True, copy=False, groups='base.group_system',
+        help='Users whose direct chat with this AI contact was already created (or found) once. The chat is '
+             'created automatically only for allowed users not in this list, the first time they open Discuss '
+             'or the portal home: a chat they unpinned never comes back by itself.',
+    )
     push_key_hash = fields.Char(string='Push Key Hash', readonly=True, copy=False, index=True,
                                 groups='base.group_system')
     push_key_hint = fields.Char(string='Push Key', readonly=True, copy=False,
@@ -405,6 +412,80 @@ class WoowAiContact(models.Model):
         contacts = self.sudo().search([])
         return contacts.filtered(lambda c: c._user_allowed(user))
 
+    @api.model
+    def _contact_for_partners(self, partner_ids):
+        """Active or archived AI contact whose bot partner is one of `partner_ids`, else empty."""
+        ids = [pid for pid in partner_ids or [] if isinstance(pid, int)]
+        if not ids:
+            return self.sudo().browse()
+        return self.sudo().with_context(active_test=False).search([('partner_id', 'in', ids)], limit=1)
+
+    # --- Onboarding (decisions 30-36: like OdooBot) ---
+
+    def _mark_onboarded(self, user):
+        """Add `user` to the onboarded users of these contacts.
+
+        Returns:
+            woow.ai.contact: the contacts `user` was newly added to. ``ON CONFLICT
+            DO NOTHING`` on the (contact, user) primary key: a concurrent request
+            onboarding the same pair waits for the other transaction, then gets
+            nothing (or a serialization failure, retried by Odoo), so only one
+            of them creates the chat and posts the welcome message.
+        """
+        ids = [i for i in self.ids if isinstance(i, int)]
+        if not ids or not user:
+            return self.browse()
+        self.env.cr.execute("""
+            INSERT INTO woow_ai_contact_onboarded_user_rel (contact_id, user_id)
+                 SELECT unnest(%s::int[]), %s
+            ON CONFLICT DO NOTHING
+              RETURNING contact_id
+        """, (ids, user.id))
+        added = [row[0] for row in self.env.cr.fetchall()]
+        if added:
+            self.invalidate_model(['onboarded_user_ids'])
+        return self.browse(added)
+
+    @api.model
+    def _contacts_to_onboard(self, user):
+        """Active AI contacts `user` may use whose chat was never created for them."""
+        if not user or not user.active or user._is_public():
+            return self.sudo().browse()
+        group_ids = user.sudo().groups_id.ids
+        if not group_ids:
+            return self.sudo().browse()
+        return self.sudo().search([
+            ('partner_id', '!=', False),
+            ('allowed_group_ids', 'in', group_ids),
+            ('onboarded_user_ids', 'not in', [user.id]),
+        ])
+
+    @api.model
+    def _onboard_user(self, user):
+        """Create the pinned chat (with the welcome message, unread) of `user` with
+        every AI contact they may use and were never onboarded to, once per
+        (user, contact). An existing chat (opened before, possibly unpinned) is
+        left as it is: the pair is only marked as onboarded.
+
+        Returns:
+            discuss.channel: the chats created (sudo)
+        """
+        chats = self.env['discuss.channel'].sudo()
+        pending = self._contacts_to_onboard(user)
+        if not pending:
+            return chats
+        for contact in pending._mark_onboarded(user):
+            if not contact._user_allowed(user):
+                continue
+            if contact._find_chat(user.partner_id):
+                continue
+            chat, created = contact._get_or_create_chat(user)
+            if created:
+                chats |= chat
+        if chats:
+            _logger.info("AI contacts: user %s onboarded, %s chat(s) created", user.id, len(chats))
+        return chats
+
     # --- Direct chat ---
 
     def _find_chat(self, partner):
@@ -436,9 +517,10 @@ class WoowAiContact(models.Model):
     def _get_or_create_chat(self, user):
         """Find or create the direct chat of `user` with this AI contact.
 
-        The chat is pinned for the user. On creation the welcome message (if
-        any) is posted by the AI. Access (allowed groups) is checked by the
-        caller.
+        The chat is pinned for the user (an unpinned chat is pinned again) and
+        the user counts as onboarded for this contact (no automatic chat later).
+        On creation the welcome message (if any) is posted by the AI: it is
+        unread for the user. Access (allowed groups) is checked by the caller.
 
         Returns:
             tuple: (discuss.channel (sudo), created: bool)
@@ -451,15 +533,19 @@ class WoowAiContact(models.Model):
             member = chat.channel_member_ids.filtered(lambda m: m.partner_id == user.partner_id)
             if member and member.unpin_dt:
                 member.write({'unpin_dt': False, 'last_interest_dt': fields.Datetime.now()})
+                # shown again in the user's open chat lists (as discuss.channel.channel_pin does)
+                user._bus_send_store(self.env['discuss.channel'].with_user(user).browse(chat.id))
         else:
-            chat = self.env['discuss.channel'].with_user(user).sudo().channel_get(
-                [contact.partner_id.id], pin=True)
-            chat = chat.with_user(SUPERUSER_ID).sudo()
+            chat = self.env['discuss.channel'].with_user(user).sudo().with_context(
+                woow_ai_channel_get=True).channel_get([contact.partner_id.id], pin=True)
+            # without the woow_ai_channel_get flag (it only guards this channel_get call)
+            chat = contact.env['discuss.channel'].browse(chat.ids).with_user(SUPERUSER_ID).sudo()
             created = True
         if not chat.allow_public_upload:
             # portal users may only upload files in channels that allow it
             # (mail/controllers/attachment.py); the chat has only two members
             chat.allow_public_upload = True
+        contact._mark_onboarded(user)
         if created:
             welcome = (contact.welcome_message or '').strip()
             if welcome:

@@ -2,9 +2,10 @@
 import base64
 import json
 import time
+from datetime import timedelta
 from unittest.mock import patch
 
-from odoo import Command
+from odoo import Command, fields
 from odoo.tests.common import HttpCase, new_test_user, tagged
 
 from odoo.addons.woow_ai_contact.tools import media
@@ -192,7 +193,89 @@ class TestAiContactHttp(HttpCase):
         chat = self.contact._find_chat(self.internal.partner_id)
         self.assertIn('/odoo/discuss?active_id=discuss.channel_%s' % chat.id, response.headers['Location'])
 
-    # --- the Discuss sidebar section and its routes are gone (decision 33) ---
+    # --- onboarding (decisions 30, 32, 34, 36) ---
+
+    def _member(self, chat, user):
+        return chat.channel_member_ids.filtered(lambda m: m.partner_id == user.partner_id)
+
+    def test_backend_messaging_init_onboards(self):
+        """/mail/data (read-only route) with init_messaging creates the chat once."""
+        hidden = self.env['woow.ai.contact'].create({'name': 'Hidden', 'endpoint_url': 'https://x.example.com/v1',
+                                                     'allowed_group_ids': [Command.set([])]})
+        self.authenticate('aih_internal', 'aih_internal')
+        data = self.make_jsonrpc_request('/mail/data', {'init_messaging': {}})
+        chat = self.contact._find_chat(self.internal.partner_id)
+        self.assertTrue(chat)
+        self.assertFalse(hidden._find_chat(self.internal.partner_id))
+        self.assertGreaterEqual(data['Store']['initChannelsUnreadCounter'], 1)
+        member = self._member(chat, self.internal)
+        self.assertTrue(member.is_pinned)
+        self.assertEqual(member.message_unread_counter, 1)
+        channels = self.make_jsonrpc_request('/mail/data', {'channels_as_member': True})
+        self.assertIn(chat.id, [t['id'] for t in channels.get('discuss.channel', [])])
+        # unpinned by the user: not back on the next load
+        self.make_jsonrpc_request('/web/dataset/call_kw/discuss.channel/channel_pin', {
+            'model': 'discuss.channel', 'method': 'channel_pin', 'args': [chat.id],
+            'kwargs': {'pinned': False}})
+        self.make_jsonrpc_request('/mail/data', {'init_messaging': {}})
+        self.env.invalidate_all()
+        self.assertTrue(member.unpin_dt, 'unpinned by the user, not pinned again by the next load')
+        welcome = self.env['mail.message'].search([('model', '=', 'discuss.channel'), ('res_id', '=', chat.id)])
+        self.assertEqual(len(welcome), 1)
+
+    def test_start_a_conversation_search_and_open(self):
+        hidden = self.env['woow.ai.contact'].create({'name': 'HTTP Hidden', 'endpoint_url': 'https://x.example.com/v1',
+                                                     'allowed_group_ids': [Command.set([])]})
+        self.authenticate('aih_internal', 'aih_internal')
+        found = self.make_jsonrpc_request('/web/dataset/call_kw/res.partner/im_search', {
+            'model': 'res.partner', 'method': 'im_search', 'args': ['HTTP', 10, []], 'kwargs': {}})
+        ids = [p['id'] for p in found.get('res.partner', [])]
+        self.assertIn(self.contact.partner_id.id, ids)
+        self.assertNotIn(hidden.partner_id.id, ids)
+        result = self.make_jsonrpc_request('/web/dataset/call_kw/discuss.channel/channel_get', {
+            'model': 'discuss.channel', 'method': 'channel_get', 'args': [],
+            'kwargs': {'partners_to': [self.contact.partner_id.id], 'force_open': True}})
+        chat = self.contact._find_chat(self.internal.partner_id)
+        self.assertTrue(any(t.get('id') == chat.id for t in result.get('discuss.channel', [])), result.keys())
+        self.assertTrue(chat.allow_public_upload)
+        with self.assertRaises(Exception):
+            self.make_jsonrpc_request('/web/dataset/call_kw/discuss.channel/channel_get', {
+                'model': 'discuss.channel', 'method': 'channel_get', 'args': [],
+                'kwargs': {'partners_to': [hidden.partner_id.id]}})
+        self.assertFalse(hidden._find_chat(self.internal.partner_id))
+
+    def test_portal_home_onboards_once(self):
+        self.authenticate('aih_portal', 'aih_portal')
+        self.assertEqual(self.url_open('/my').status_code, 200)
+        chat = self.contact._find_chat(self.portal.partner_id)
+        self.assertTrue(chat)
+        member = self._member(chat, self.portal)
+        self.assertTrue(member.is_pinned)
+        self.assertEqual(member.message_unread_counter, 1)
+        self.assertIn(self.portal, self.contact.onboarded_user_ids)
+        member.unpin_dt = '2026-01-01 00:00:00'
+        self.env.flush_all()
+        self.url_open('/my')
+        self.env.invalidate_all()
+        self.assertTrue(member.unpin_dt, 'not pinned again by itself')
+        welcome = self.env['mail.message'].search([('model', '=', 'discuss.channel'), ('res_id', '=', chat.id)])
+        self.assertEqual(len(welcome), 1)
+        # the /my card and /my/ai stay
+        self.assertIn('href="/my/ai"', self.url_open('/my').text)
+        self.assertIn('HTTP Advisor', self.url_open('/my/ai').text)
+
+    def test_push_pins_the_chat_again(self):
+        key = self.contact.action_generate_push_key()['context']['default_push_key']
+        chat, _created = self.contact._get_or_create_chat(self.internal)
+        member = self._member(chat, self.internal)
+        member.unpin_dt = fields.Datetime.now() + timedelta(minutes=1)
+        self.env.flush_all()
+        self.assertFalse(member.is_pinned)
+        response = self.push({'to': {'user_id': self.internal.id}, 'text': '提醒'}, key=key)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()['channel_id'], chat.id)
+        self.env.invalidate_all()
+        self.assertTrue(member.is_pinned)
 
     def test_sidebar_routes_removed(self):
         self.authenticate('aih_internal', 'aih_internal')

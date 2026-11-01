@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'AI Contacts for Discuss',
-    'version': '18.0.1.2.0',
+    'version': '18.0.1.3.0',
     'category': 'Productivity/Discuss',
     'summary': 'Chat one-to-one with AI contacts (Hermes, LiteLLM, n8n) in Discuss and the portal',
     'description': """
@@ -23,7 +23,10 @@ Each AI contact is a bot partner connected to an OpenAI compatible backend
   AI replies are attached from allowlisted domains
 * Markdown replies (tables, lists, code) rendered to safe HTML
 * Push API: backends can message users first (one push key per AI contact)
-* Portal /my/ai entry
+* Like OdooBot: the chats with the AI contacts a user may use are created
+  (pinned, unread welcome message) the first time they open Discuss or the
+  portal home; "Start a conversation" finds them; "bot" presence
+* Portal /my/ai entry; settings under Discuss > Configuration
 * Call logs for administrators (no conversation content unless enabled)
 
 See README.md and docs/PROTOCOL.md in the repository.

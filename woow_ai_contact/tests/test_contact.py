@@ -300,10 +300,12 @@ class TestAiContact(AiContactCase):
         self.assertEqual(self.env['woow.ai.contact']._contacts_for_user(self.portal), self.contact | self.n8n)
 
     def test_existing_chat_reused_without_welcome(self):
-        """A chat opened from the normal "start a conversation" (no upload flag yet)
+        """A chat created by plain channel_get before 18.0.1.3.0 (no upload flag yet)
         is reused: no second welcome message, uploads get enabled."""
         self.contact.welcome_message = 'Hello'
-        chat = self.env['discuss.channel'].with_user(self.portal).sudo().channel_get([self.contact.partner_id.id])
+        chat = self.env['discuss.channel'].with_user(self.portal).sudo().with_context(
+            woow_ai_channel_get=True).channel_get([self.contact.partner_id.id])
+        chat = chat.with_context(woow_ai_channel_get=False)
         self.assertFalse(chat.allow_public_upload)
         again, created = self.contact._get_or_create_chat(self.portal)
         self.assertEqual(again, chat)

@@ -14,7 +14,10 @@ import html as html_lib
 import logging
 import re
 
-from odoo import models
+from odoo import api, fields, models
+from odoo.exceptions import AccessError
+
+from odoo.addons.mail.tools.discuss import Store
 
 _logger = logging.getLogger(__name__)
 
@@ -129,6 +132,30 @@ class DiscussChannel(models.Model):
         """``channel`` object of the n8n payload."""
         self.ensure_one()
         return {'id': self.id, 'type': self.channel_type}
+
+    # --- Direct chats opened from "Start a conversation" ---
+
+    @api.model
+    @api.returns('self', lambda channels: Store(channels).get_result())
+    def channel_get(self, partners_to, pin=True, force_open=False):
+        """A chat with an AI contact's bot partner ("Start a conversation",
+        avatar card) goes through the same access check and chat creation as
+        the other entries (``woow.ai.contact._get_or_create_chat``: welcome
+        message, uploads allowed, onboarded)."""
+        if not self.env.context.get('woow_ai_channel_get'):
+            own = self.env.user.partner_id.id
+            others = [pid for pid in partners_to or [] if pid != own]
+            contact = self.env['woow.ai.contact']._contact_for_partners(others)
+            if contact and len(set(others)) == 1:
+                user = self.env.user
+                if not contact.active or not contact._user_allowed(user):
+                    raise AccessError(self.env._('You do not have permission to use this AI contact.'))
+                chat, _created = contact._get_or_create_chat(user)
+                if force_open:
+                    member = chat.channel_member_ids.filtered(lambda m: m.partner_id.id == own)
+                    member.write({'fold_state': 'open', 'last_interest_dt': fields.Datetime.now()})
+                return self.browse(chat.id)
+        return super().channel_get(partners_to, pin=pin, force_open=force_open)
 
     # --- Trigger ---
 

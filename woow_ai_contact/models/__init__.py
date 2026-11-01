@@ -6,3 +6,5 @@ from . import ai_call_log
 from . import ai_job
 from . import discuss_channel
 from . import push_key_wizard
+from . import res_partner
+from . import res_users
