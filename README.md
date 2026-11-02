@@ -23,8 +23,13 @@ server) or to an n8n webhook.
   again (chat search, portal).
 - "Start a conversation" finds the AI contacts the user may use (and only
   those); their status is "bot" (green heart), like OdooBot.
-- Portal users: their chats are created the first time they open `/my`; the
-  `/my` card → `/my/ai` list stays.
+- Portal users: their chats are created the first time they open any portal
+  page (`/my`, `/my/ai`, or the discussion list of a portal Discuss module such
+  as cs_portal_discuss); the `/my` card → `/my/ai` list stays. With
+  cs_portal_discuss, a chat opened from `/my/ai` gets a back bar that leads back
+  to `/my/ai`.
+- No "Start a Call" / "Start a Video Call" in a chat with an AI contact (the bot
+  never answers), like OdooBot; calls between people are unchanged.
 - Replies are produced in the background after the user's message is saved,
   by the scheduled action *AI Contacts: Run AI Replies* in the **cron process**
   (never in a web worker, so web worker restarts do not cut long answers):

@@ -9,14 +9,15 @@ from odoo.addons.portal.controllers.portal import CustomerPortal
 
 class WoowAiContactPortal(CustomerPortal):
 
-    @http.route()
-    def home(self, **kw):
-        # like the backend (res.users._init_messaging): the first visit of the
-        # portal home creates the chats with the AI contacts the user may use
+    def _prepare_portal_layout_values(self):
+        # like the backend (res.users._init_messaging): any portal page (/my,
+        # /my/ai, the discussion list of an optional portal Discuss module, ...)
+        # first creates the chats with the AI contacts the user may use, so
+        # they are there whichever page the user opens first
         user = request.env.user
         if not user._is_public():
             user._woow_ai_onboard()
-        return super().home(**kw)
+        return super()._prepare_portal_layout_values()
 
     def _prepare_home_portal_values(self, counters):
         values = super()._prepare_home_portal_values(counters)
@@ -43,7 +44,8 @@ class WoowAiContactPortal(CustomerPortal):
         chat, _created = contact._get_or_create_chat(user)
         if user._is_internal():
             return request.redirect('/odoo/discuss?active_id=discuss.channel_%s' % chat.id)
-        # cs_portal_discuss (when installed) reads ?discussions=1; core Odoo would
-        # only log a warning about an unknown argument
-        suffix = '?discussions=1' if 'cs_portal_discuss' in request.env.registry._init_modules else ''
+        # cs_portal_discuss (when installed) reads ?discussions=1 (portal back
+        # bar) and ?back= (where the bar leads: back to this list); core Odoo
+        # ignores both
+        suffix = '?discussions=1&back=/my/ai' if 'cs_portal_discuss' in request.env.registry._init_modules else ''
         return request.redirect('/discuss/channel/%s%s' % (chat.id, suffix))

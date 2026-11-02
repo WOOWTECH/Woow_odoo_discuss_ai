@@ -163,6 +163,9 @@ class TestAiContactHttp(HttpCase):
         self.assertIn('/discuss/channel/%s' % chat.id, location)
         if 'cs_portal_discuss' not in self.env.registry._init_modules:
             self.assertTrue(location.endswith('/discuss/channel/%s' % chat.id))
+        else:
+            # the portal back bar leads back to /my/ai, where the user came from
+            self.assertTrue(location.endswith('/discuss/channel/%s?discussions=1&back=/my/ai' % chat.id), location)
         # welcome message posted once
         welcome = self.env['mail.message'].search([('model', '=', 'discuss.channel'), ('res_id', '=', chat.id)])
         self.assertEqual(len(welcome), 1)
@@ -264,6 +267,15 @@ class TestAiContactHttp(HttpCase):
         # the /my card and /my/ai stay
         self.assertIn('href="/my/ai"', self.url_open('/my').text)
         self.assertIn('HTTP Advisor', self.url_open('/my/ai').text)
+
+    def test_any_portal_page_onboards(self):
+        # not only /my: a bookmark to another portal page (here /my/ai, or the
+        # discussion list of a portal Discuss module) creates the chats first
+        self.authenticate('aih_portal', 'aih_portal')
+        self.assertFalse(self.contact._find_chat(self.portal.partner_id))
+        self.assertEqual(self.url_open('/my/ai').status_code, 200)
+        self.assertTrue(self.contact._find_chat(self.portal.partner_id))
+        self.assertIn(self.portal, self.contact.onboarded_user_ids)
 
     def test_push_pins_the_chat_again(self):
         key = self.contact.action_generate_push_key()['context']['default_push_key']

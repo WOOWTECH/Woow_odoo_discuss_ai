@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'AI Contacts for Discuss',
-    'version': '18.0.1.5.0',
+    'version': '18.0.1.6.0',
     'category': 'Productivity/Discuss',
     'summary': 'Chat one-to-one with AI contacts (Hermes, LiteLLM, n8n) in Discuss and the portal',
     'description': """
@@ -47,6 +47,10 @@ See README.md and docs/PROTOCOL.md in the repository.
         'views/menus.xml',
         'views/portal_templates.xml',
     ],
+    'assets': {
+        'web.assets_backend': ['woow_ai_contact/static/src/**/*'],
+        'mail.assets_public': ['woow_ai_contact/static/src/**/*'],
+    },
     'uninstall_hook': 'uninstall_hook',
     'installable': True,
     'auto_install': False,
