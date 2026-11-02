@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- one entry on the portal home: "Discussions" (cs_portal_discuss), which
+    <!-- one entry on the portal home: "Discussions" (woow_odoo_portal_discuss), which
          now also holds the AI contacts; the "AI Contacts" card is hidden -->
     <template id="portal_my_home_one_entry" name="AI Contacts: one portal entry"
               inherit_id="portal.portal_my_home" priority="60">
@@ -12,7 +12,7 @@
 
     <!-- AI tab: the AI contacts without an open chat, below the list -->
     <template id="portal_discussions_ai_tab" name="AI Contacts: AI tab of the discussions"
-              inherit_id="cs_portal_discuss.portal_discuss_channels" priority="60">
+              inherit_id="woow_odoo_portal_discuss.portal_discuss_channels" priority="60">
         <xpath expr="//div[hasclass('o_portal_discussions_empty')]" position="attributes">
             <attribute name="t-if">not channels and not woow_ai_contacts_to_start</attribute>
         </xpath>

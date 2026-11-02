@@ -10,16 +10,16 @@ Odoo 18。讓內部用戶與 portal 用戶在 Discuss 裡和「AI 聯絡人」�
 |---|---|---|---|
 | `woow_ai_contact` | `mail`, `portal` | 手動 | AI 聯絡人、後端連接、回覆佇列、多媒體、推送 API、像 OdooBot 的自動私訊與搜尋、portal 入口、呼叫紀錄 |
 | `woow_ai_contact_livechat` | `woow_ai_contact`, `im_livechat` | `auto_install` | Live Chat 頻道選 AI 聯絡人、轉真人／暫停、關鍵字轉真人、從 `im_livechat_ai` 搬移 |
-| `woow_ai_contact_portal_discuss` | `woow_ai_contact`, `cs_portal_discuss` | `auto_install` | portal 單一入口（定案 44）：AI 聯絡人併入 `/my/discussions` 的「AI 助理」分頁 |
+| `woow_ai_contact_portal_discuss` | `woow_ai_contact`, `woow_odoo_portal_discuss` | `auto_install` | portal 單一入口（定案 44）：AI 聯絡人併入 `/my/discussions` 的「AI 助理」分頁 |
 
-`woow_ai_contact` 不相依 `cs_portal_discuss`／`woow_odoo_portal_discuss`；兩者的整合全在橋接 `woow_ai_contact_portal_discuss`（相依兩者，所以在組合後的 portal controller 裡排在最前面，覆寫一定生效；核心不再檢查 cs 有沒有裝）。
+`woow_ai_contact` 不相依 `woow_odoo_portal_discuss`（11-02 定案 46 起取代外購的 `cs_portal_discuss`，兩者不能同時安裝）；兩者的整合全在橋接 `woow_ai_contact_portal_discuss`（相依兩者，所以在組合後的 portal controller 裡排在最前面，覆寫一定生效；核心不再檢查 cs 有沒有裝）。
 
 ## portal 單一入口（woow_ai_contact_portal_discuss，定案 44）
 
 - 首頁：隱藏核心的「AI 聯絡人」卡片（繼承 `portal.portal_my_home`，以 `url = '/my/ai'` 找到 `portal_docs_entry` 後 replace），「討論區」卡片說明改成「與 AI 助理和我們的團隊聊天」。
-- `/my/discussions` 的分頁由 cs_portal_discuss 18.0.1.1.0 的擴充點 `_portal_discussion_filters()` 提供（每項 label／domain／sequence；沒內容的分頁不顯示，開著的除外）。橋接加 `ai`（sequence 10，排在「全部」後）：`channel_type = 'chat'` 且有成員是 AI 聯絡人的 partner（含封存的聯絡人，保留歷史）；「私訊」加上 `channel_member_ids not any` 同一條件，只剩人跟人。列的類型標籤改「AI 助理」（覆寫 `_prepare_portal_discussion_rows`）。
+- `/my/discussions` 的分頁由 woow_odoo_portal_discuss 的擴充點 `_portal_discussion_filters()` 提供（每項 label／domain／sequence；沒內容的分頁不顯示，開著的除外）。橋接加 `ai`（sequence 10，排在「全部」後）：`channel_type = 'chat'` 且有成員是 AI 聯絡人的 partner（含封存的聯絡人，保留歷史）；「私訊」加上 `channel_member_ids not any` 同一條件，只剩人跟人。列的類型標籤改「AI 助理」（覆寫 `_prepare_portal_discussion_rows`）。
 - AI 分頁另列「其他 AI 助理」：使用者可用、但沒有開著（未建或已關掉）的 AI 聯絡人，連到 `/my/ai/<id>/open`（會重新置頂）。用 lazy response 的 `qcontext` 加值，不改 cs 的路由。
-- `/my/ai` 轉到 `/my/discussions?filterby=ai`；`/my/ai/<id>/open` 經核心掛勾 `_woow_ai_portal_chat_url(chat)` 加 `?discussions=1&back=/my/discussions%3Ffilterby%3Dai`。cs_portal_discuss 18.0.1.1.0 的返回列接受 `/my` 路徑加簡單查詢字串，清單裡每一列也帶目前分頁的 `back`，所以返回列回到進來時的分頁（從「全部」進來就回清單本身）。
+- `/my/ai` 轉到 `/my/discussions?filterby=ai`；`/my/ai/<id>/open` 經核心掛勾 `_woow_ai_portal_chat_url(chat)` 加 `?discussions=1&back=/my/discussions%3Ffilterby%3Dai`。woow_odoo_portal_discuss 的返回列接受 `/my` 路徑加簡單查詢字串，清單裡每一列也帶目前分頁的 `back`，所以返回列回到進來時的分頁（從「全部」進來就回清單本身）。
 
 ## 資料模型（woow_ai_contact）
 
@@ -256,7 +256,7 @@ Authorization: Bearer <push key>      # 對應到某個 AI 聯絡人
 - **呼叫紀錄**：`backend_type` 多一個 `push`；每日 cron 同時清除 30 天前的呼叫紀錄與已結束的 job。關閉「記錄請求內容」時清除該 AI 聯絡人已存的內容；記錄時請求與回應（含 openai content 字串）裡的 data URI 與 base64 附件只留長度。串流回應記成 `{"stream": true, "content", "finish_reason", "usage"}`。
 - **推送金鑰**：格式 `wpk_` 開頭；精靈不存檔，金鑰只在產生按鈕的回應 context 裡出現一次；畫面只留前 8 碼＋末 4 碼提示。
 - **預設訊息**（無權限、錯誤）以收訊者語言翻譯（`zh_TW.po`）。
-- **沒有** `cs_portal_discuss` 的映像（paas-odoo-official:20261030.1113 沒有這個模組）一樣可用：portal 用 Odoo 原生 `/discuss/channel/<id>` 開啟與發訊（HttpCase），上傳圖片／PDF 並收到 AI 回覆（沙盒對真的 Odoo 伺服器實測）。
+- **沒有** portal 討論模組（`cs_portal_discuss`／`woow_odoo_portal_discuss`）的映像（paas-odoo-official:20261030.1113 沒有這個模組）一樣可用：portal 用 Odoo 原生 `/discuss/channel/<id>` 開啟與發訊（HttpCase），上傳圖片／PDF 並收到 AI 回覆（沙盒對真的 Odoo 伺服器實測）。
 
 ## 負責人第二批定案（10-31，審查後 8 題）與落實
 

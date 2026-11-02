@@ -100,4 +100,4 @@ class TestPortalMerge(HttpCase):
             '/discuss/channel/%s?discussions=1&back=/my/discussions%%3Ffilterby%%3Dai' % chat.id), location)
         page = self._page(location)
         self.assertIn('href="/my/discussions?filterby=ai"', page)
-        self.assertIn('cs_discuss_back_bar', page)
+        self.assertIn('o_portal_discuss_back_bar', page)

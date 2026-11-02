@@ -12,7 +12,7 @@ AI_TAB_URL = '/my/discussions?filterby=%s' % AI_TAB
 
 
 class WoowAiPortalDiscussions(CustomerPortal):
-    """Loaded after woow_ai_contact and cs_portal_discuss (depends on both):
+    """Loaded after woow_ai_contact and woow_odoo_portal_discuss (depends on both):
     first in the combined portal controller, so these overrides apply."""
 
     def _woow_ai_partner_ids(self):
@@ -69,5 +69,5 @@ class WoowAiPortalDiscussions(CustomerPortal):
         return request.redirect(AI_TAB_URL)
 
     def _woow_ai_portal_chat_url(self, chat):
-        # cs_portal_discuss back bar (?discussions=1), back to the AI tab
+        # woow_odoo_portal_discuss back bar (?discussions=1), back to the AI tab
         return '/discuss/channel/%s?discussions=1&back=%s' % (chat.id, quote(AI_TAB_URL, safe='/'))

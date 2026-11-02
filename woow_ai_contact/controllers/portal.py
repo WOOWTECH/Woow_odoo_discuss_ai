@@ -49,5 +49,5 @@ class WoowAiContactPortal(CustomerPortal):
     def _woow_ai_portal_chat_url(self, chat):
         """Where a portal user chats with an AI contact: core Odoo's Discuss
         page. A portal Discuss module can add its own parameters (the bridge
-        woow_ai_contact_portal_discuss adds the back bar of cs_portal_discuss)."""
+        woow_ai_contact_portal_discuss adds the back bar of woow_odoo_portal_discuss)."""
         return '/discuss/channel/%s' % chat.id

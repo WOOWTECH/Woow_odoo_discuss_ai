@@ -147,7 +147,7 @@ class TestAiContactHttp(HttpCase):
     # --- portal entry ---
 
     def test_portal_open_and_post(self):
-        # with cs_portal_discuss the bridge merges /my/ai into /my/discussions
+        # with woow_odoo_portal_discuss the bridge merges /my/ai into /my/discussions
         # (its own tests); this module alone has its own page
         merged = 'woow_ai_contact_portal_discuss' in self.env.registry._init_modules
         self.authenticate('aih_portal', 'aih_portal')
@@ -268,7 +268,7 @@ class TestAiContactHttp(HttpCase):
         welcome = self.env['mail.message'].search([('model', '=', 'discuss.channel'), ('res_id', '=', chat.id)])
         self.assertEqual(len(welcome), 1)
         # the /my card and /my/ai stay (merged into /my/discussions by the
-        # bridge woow_ai_contact_portal_discuss when cs_portal_discuss is installed)
+        # bridge woow_ai_contact_portal_discuss when woow_odoo_portal_discuss is installed)
         if 'woow_ai_contact_portal_discuss' not in self.env.registry._init_modules:
             self.assertIn('href="/my/ai"', self.url_open('/my').text)
             self.assertIn('HTTP Advisor', self.url_open('/my/ai').text)
