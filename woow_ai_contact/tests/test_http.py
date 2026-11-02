@@ -147,25 +147,26 @@ class TestAiContactHttp(HttpCase):
     # --- portal entry ---
 
     def test_portal_open_and_post(self):
+        # with cs_portal_discuss the bridge merges /my/ai into /my/discussions
+        # (its own tests); this module alone has its own page
+        merged = 'woow_ai_contact_portal_discuss' in self.env.registry._init_modules
         self.authenticate('aih_portal', 'aih_portal')
         counters = self.make_jsonrpc_request('/my/counters', {'counters': ['woow_ai_contact_count']})
         self.assertGreaterEqual(counters['woow_ai_contact_count'], 1)
-        home = self.url_open('/my')
-        self.assertIn('href="/my/ai"', home.text)
-        page = self.url_open('/my/ai')
-        self.assertEqual(page.status_code, 200)
-        self.assertIn('HTTP Advisor', page.text)
+        if not merged:
+            home = self.url_open('/my')
+            self.assertIn('href="/my/ai"', home.text)
+            page = self.url_open('/my/ai')
+            self.assertEqual(page.status_code, 200)
+            self.assertIn('HTTP Advisor', page.text)
         response = self.url_open('/my/ai/%s/open' % self.contact.id, allow_redirects=False)
         self.assertIn(response.status_code, (302, 303))
         chat = self.contact._find_chat(self.portal.partner_id)
         self.assertTrue(chat)
         location = response.headers['Location']
         self.assertIn('/discuss/channel/%s' % chat.id, location)
-        if 'cs_portal_discuss' not in self.env.registry._init_modules:
+        if not merged:
             self.assertTrue(location.endswith('/discuss/channel/%s' % chat.id))
-        else:
-            # the portal back bar leads back to /my/ai, where the user came from
-            self.assertTrue(location.endswith('/discuss/channel/%s?discussions=1&back=/my/ai' % chat.id), location)
         # welcome message posted once
         welcome = self.env['mail.message'].search([('model', '=', 'discuss.channel'), ('res_id', '=', chat.id)])
         self.assertEqual(len(welcome), 1)
@@ -188,6 +189,8 @@ class TestAiContactHttp(HttpCase):
         self.contact.allowed_group_ids = self.env.ref('base.group_user')
         self.authenticate('aih_portal', 'aih_portal')
         self.assertNotIn('HTTP Advisor', self.url_open('/my/ai').text)
+        if 'woow_ai_contact_portal_discuss' in self.env.registry._init_modules:
+            self.assertNotIn('HTTP Advisor', self.url_open('/my/discussions?filterby=ai').text)
         self.assertEqual(self.url_open('/my/ai/%s/open' % self.contact.id, allow_redirects=False).status_code, 404)
         self.assertFalse(self.contact._find_chat(self.portal.partner_id))
 
@@ -264,9 +267,13 @@ class TestAiContactHttp(HttpCase):
         self.assertTrue(member.unpin_dt, 'not pinned again by itself')
         welcome = self.env['mail.message'].search([('model', '=', 'discuss.channel'), ('res_id', '=', chat.id)])
         self.assertEqual(len(welcome), 1)
-        # the /my card and /my/ai stay
-        self.assertIn('href="/my/ai"', self.url_open('/my').text)
-        self.assertIn('HTTP Advisor', self.url_open('/my/ai').text)
+        # the /my card and /my/ai stay (merged into /my/discussions by the
+        # bridge woow_ai_contact_portal_discuss when cs_portal_discuss is installed)
+        if 'woow_ai_contact_portal_discuss' not in self.env.registry._init_modules:
+            self.assertIn('href="/my/ai"', self.url_open('/my').text)
+            self.assertIn('HTTP Advisor', self.url_open('/my/ai').text)
+        else:
+            self.assertIn('HTTP Advisor', self.url_open('/my/discussions?filterby=ai').text)
 
     def test_any_portal_page_onboards(self):
         # not only /my: a bookmark to another portal page (here /my/ai, or the

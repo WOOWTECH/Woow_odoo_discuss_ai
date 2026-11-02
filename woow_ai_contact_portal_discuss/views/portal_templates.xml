@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- one entry on the portal home: "Discussions" (cs_portal_discuss), which
+         now also holds the AI contacts; the "AI Contacts" card is hidden -->
+    <template id="portal_my_home_one_entry" name="AI Contacts: one portal entry"
+              inherit_id="portal.portal_my_home" priority="60">
+        <xpath expr="//t[@t-call='portal.portal_docs_entry'][t[@t-set='url'][@t-value=&quot;'/my/ai'&quot;]]" position="replace"/>
+        <xpath expr="//t[@t-call='portal.portal_docs_entry'][t[@t-set='url'][@t-value=&quot;'/my/discussions'&quot;]]/t[@t-set='text']" position="replace">
+            <t t-set="text">Chat with our AI assistants and our team</t>
+        </xpath>
+    </template>
+
+    <!-- AI tab: the AI contacts without an open chat, below the list -->
+    <template id="portal_discussions_ai_tab" name="AI Contacts: AI tab of the discussions"
+              inherit_id="cs_portal_discuss.portal_discuss_channels" priority="60">
+        <xpath expr="//div[hasclass('o_portal_discussions_empty')]" position="attributes">
+            <attribute name="t-if">not channels and not woow_ai_contacts_to_start</attribute>
+        </xpath>
+        <xpath expr="//div[hasclass('o_portal_discussions')]" position="after">
+            <t t-if="woow_ai_contacts_to_start">
+                <h6 class="text-muted mt-4 mb-2">More AI assistants</h6>
+                <div class="list-group o_woow_ai_start">
+                    <a t-foreach="woow_ai_contacts_to_start" t-as="ai_contact"
+                       t-attf-href="/my/ai/#{ai_contact.id}/open"
+                       class="list-group-item list-group-item-action d-flex align-items-center gap-3 py-2 o_woow_ai_start_contact">
+                        <img t-attf-src="/web/image/woow.ai.contact/#{ai_contact.id}/image_128"
+                             class="rounded-circle flex-shrink-0" width="40" height="40"
+                             style="object-fit: cover;" t-att-alt="ai_contact.name"/>
+                        <div class="flex-grow-1 min-w-0">
+                            <div class="fw-semibold text-truncate" t-out="ai_contact.name"/>
+                            <small t-if="ai_contact.description" class="text-muted d-block text-truncate"
+                                   t-out="ai_contact.description"/>
+                        </div>
+                        <span class="btn btn-sm btn-primary flex-shrink-0">Start chatting</span>
+                    </a>
+                </div>
+            </t>
+        </xpath>
+    </template>
+</odoo>

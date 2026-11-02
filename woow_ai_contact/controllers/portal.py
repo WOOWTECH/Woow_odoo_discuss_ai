@@ -44,8 +44,10 @@ class WoowAiContactPortal(CustomerPortal):
         chat, _created = contact._get_or_create_chat(user)
         if user._is_internal():
             return request.redirect('/odoo/discuss?active_id=discuss.channel_%s' % chat.id)
-        # cs_portal_discuss (when installed) reads ?discussions=1 (portal back
-        # bar) and ?back= (where the bar leads: back to this list); core Odoo
-        # ignores both
-        suffix = '?discussions=1&back=/my/ai' if 'cs_portal_discuss' in request.env.registry._init_modules else ''
-        return request.redirect('/discuss/channel/%s%s' % (chat.id, suffix))
+        return request.redirect(self._woow_ai_portal_chat_url(chat))
+
+    def _woow_ai_portal_chat_url(self, chat):
+        """Where a portal user chats with an AI contact: core Odoo's Discuss
+        page. A portal Discuss module can add its own parameters (the bridge
+        woow_ai_contact_portal_discuss adds the back bar of cs_portal_discuss)."""
+        return '/discuss/channel/%s' % chat.id

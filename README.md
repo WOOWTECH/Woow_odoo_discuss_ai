@@ -11,6 +11,7 @@ server) or to an n8n webhook.
 |---|---|---|
 | `woow_ai_contact` | available | AI contacts, backend connections, durable reply queue, files both ways, push API, chats listed like OdooBot's, portal `/my/ai` |
 | `woow_ai_contact_livechat` | available (auto-installed with Live Chat) | Live Chat channels answered by an AI contact: human handoff, pause, `/ai on` resume, staged migration from `im_livechat_ai` (see [docs/LIVECHAT.md](docs/LIVECHAT.md)) |
+| `woow_ai_contact_portal_discuss` | available (auto-installed with cs_portal_discuss) | One portal entry: the AI contacts become the "AI Assistants" tab of `/my/discussions`; `/my/ai` leads there |
 
 ## Features
 
@@ -25,9 +26,14 @@ server) or to an n8n webhook.
   those); their status is "bot" (green heart), like OdooBot.
 - Portal users: their chats are created the first time they open any portal
   page (`/my`, `/my/ai`, or the discussion list of a portal Discuss module such
-  as cs_portal_discuss); the `/my` card → `/my/ai` list stays. With
-  cs_portal_discuss, a chat opened from `/my/ai` gets a back bar that leads back
-  to `/my/ai`.
+  as cs_portal_discuss); the `/my` card → `/my/ai` list → chat. With
+  cs_portal_discuss, `woow_ai_contact_portal_discuss` (auto-installed) merges
+  both into one entry: the "Discussions" card only, and `/my/discussions` with
+  the tabs All / AI Assistants / Direct Message / Group / Channel
+  (`?filterby=ai|chat|group|channel`; empty tabs hidden). The AI tab lists the
+  chats with AI contacts (no longer under Direct Message) and offers the AI
+  contacts without an open chat ("More AI assistants"); `/my/ai` leads to the
+  AI tab, and a chat's back bar returns to the tab it was opened from.
 - No "Start a Call" / "Start a Video Call" in a chat with an AI contact (the bot
   never answers), like OdooBot; calls between people are unchanged.
 - Replies are produced in the background after the user's message is saved,

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'AI Contacts for Discuss',
-    'version': '18.0.1.6.0',
+    'version': '18.0.1.7.0',
     'category': 'Productivity/Discuss',
     'summary': 'Chat one-to-one with AI contacts (Hermes, LiteLLM, n8n) in Discuss and the portal',
     'description': """

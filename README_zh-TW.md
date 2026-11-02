@@ -8,6 +8,7 @@ Odoo 18 模組：讓內部用戶與 portal 用戶在 Discuss 裡和「AI 聯絡�
 |---|---|---|
 | `woow_ai_contact` | 可用 | AI 聯絡人、後端連線、回覆佇列、雙向檔案、推送 API、像 OdooBot 一樣自動出現在聊天清單、portal `/my/ai` |
 | `woow_ai_contact_livechat` | 可用（有 Live Chat 時自動安裝） | Live Chat 頻道交給 AI 聯絡人回答：轉真人、暫停、`/ai on` 立即恢復、從 `im_livechat_ai` 分段搬移（見 [docs/LIVECHAT.md](docs/LIVECHAT.md)） |
+| `woow_ai_contact_portal_discuss` | 可用（有 cs_portal_discuss 時自動安裝） | portal 單一入口：AI 聯絡人變成 `/my/discussions` 的「AI 助理」分頁，`/my/ai` 轉到那裡 |
 
 ## 安裝
 
@@ -58,7 +59,7 @@ n8n 的請求與回覆格式和 `im_livechat_ai` 18.0.1.2.0 相同，同一個�
 - 每人每個 AI 聯絡人只自動建一次：取消置頂／關掉後不會自己回來；AI 主動推送或使用者自己再開（「開始對話」搜尋、portal）時才會再出現。
 - 「開始對話」搜尋得到 AI 聯絡人（只列出自己有權限用的）；狀態顯示「機器人」（綠色愛心），跟 OdooBot 一樣。
 - 回覆在背景由 cron 程序處理：同一段對話一次一則（連發只回最新、帶完整上下文），最多 4 段對話同時進行，處理中顯示「輸入中」，預設逾時 5 分鐘，重啟不掉單。
-- portal：第一次進任何 portal 頁面（`/my`、`/my/ai`，或 cs_portal_discuss 這類 portal 討論模組的對話清單）就自動建好私訊（同樣只建一次）；`/my` 首頁「AI 聯絡人」卡片 → `/my/ai` → 開始對話。有裝 cs_portal_discuss 時，從 `/my/ai` 開的對話，返回列會回到 `/my/ai`。
+- portal：第一次進任何 portal 頁面（`/my`、`/my/ai`，或 cs_portal_discuss 這類 portal 討論模組的對話清單）就自動建好私訊（同樣只建一次）；`/my` 首頁「AI 聯絡人」卡片 → `/my/ai` → 開始對話。有裝 cs_portal_discuss 時，自動安裝的 `woow_ai_contact_portal_discuss` 把兩者合成單一入口：首頁只留「討論區」卡片，`/my/discussions` 上方分頁「全部｜AI 助理｜私訊｜群組｜頻道」（`?filterby=ai|chat|group|channel`，沒內容的分頁不顯示）。AI 助理分頁列出與 AI 的私訊（私訊分頁不再列 AI），並列出還沒開對話的 AI 助理（「其他 AI 助理」）；`/my/ai` 轉到 AI 助理分頁，聊天頁的返回列回到進來時的分頁。
 - AI 私訊不顯示「開始通話」「開始視訊通話」（AI 不會接），跟 OdooBot 一樣；人跟人的通話不受影響。
 - 可傳圖片與檔案（OpenAI 相容後端每次最多內嵌 4 張、約 7 MB；PDF、xlsx、xls、docx、csv、txt、md、json 等文件依「使用者傳送的文件」設定：預設原檔直接送給模型（Odoo 不轉換），Hermes 請選「只給下載連結」；其餘給 1 小時簽名網址，`web.base.url` 必須是 Odoo 的對外網址）；AI 回覆支援表格、清單、程式碼，白名單網域的圖片／檔案、n8n base64 檔案、回覆中的 `data:image` 內嵌圖都會存成附件。
 

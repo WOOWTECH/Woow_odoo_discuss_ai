@@ -10,8 +10,16 @@ Odoo 18。讓內部用戶與 portal 用戶在 Discuss 裡和「AI 聯絡人」�
 |---|---|---|---|
 | `woow_ai_contact` | `mail`, `portal` | 手動 | AI 聯絡人、後端連接、回覆佇列、多媒體、推送 API、像 OdooBot 的自動私訊與搜尋、portal 入口、呼叫紀錄 |
 | `woow_ai_contact_livechat` | `woow_ai_contact`, `im_livechat` | `auto_install` | Live Chat 頻道選 AI 聯絡人、轉真人／暫停、關鍵字轉真人、從 `im_livechat_ai` 搬移 |
+| `woow_ai_contact_portal_discuss` | `woow_ai_contact`, `cs_portal_discuss` | `auto_install` | portal 單一入口（定案 44）：AI 聯絡人併入 `/my/discussions` 的「AI 助理」分頁 |
 
-不相依 `cs_portal_discuss`／`woow_odoo_portal_discuss`。有裝 `cs_portal_discuss` 的站，AI 私訊會自動出現在 `/my/discussions`（它是 `channel_type = 'chat'` 且使用者是成員）。
+`woow_ai_contact` 不相依 `cs_portal_discuss`／`woow_odoo_portal_discuss`；兩者的整合全在橋接 `woow_ai_contact_portal_discuss`（相依兩者，所以在組合後的 portal controller 裡排在最前面，覆寫一定生效；核心不再檢查 cs 有沒有裝）。
+
+## portal 單一入口（woow_ai_contact_portal_discuss，定案 44）
+
+- 首頁：隱藏核心的「AI 聯絡人」卡片（繼承 `portal.portal_my_home`，以 `url = '/my/ai'` 找到 `portal_docs_entry` 後 replace），「討論區」卡片說明改成「與 AI 助理和我們的團隊聊天」。
+- `/my/discussions` 的分頁由 cs_portal_discuss 18.0.1.1.0 的擴充點 `_portal_discussion_filters()` 提供（每項 label／domain／sequence；沒內容的分頁不顯示，開著的除外）。橋接加 `ai`（sequence 10，排在「全部」後）：`channel_type = 'chat'` 且有成員是 AI 聯絡人的 partner（含封存的聯絡人，保留歷史）；「私訊」加上 `channel_member_ids not any` 同一條件，只剩人跟人。列的類型標籤改「AI 助理」（覆寫 `_prepare_portal_discussion_rows`）。
+- AI 分頁另列「其他 AI 助理」：使用者可用、但沒有開著（未建或已關掉）的 AI 聯絡人，連到 `/my/ai/<id>/open`（會重新置頂）。用 lazy response 的 `qcontext` 加值，不改 cs 的路由。
+- `/my/ai` 轉到 `/my/discussions?filterby=ai`；`/my/ai/<id>/open` 經核心掛勾 `_woow_ai_portal_chat_url(chat)` 加 `?discussions=1&back=/my/discussions%3Ffilterby%3Dai`。cs_portal_discuss 18.0.1.1.0 的返回列接受 `/my` 路徑加簡單查詢字串，清單裡每一列也帶目前分頁的 `back`，所以返回列回到進來時的分頁（從「全部」進來就回清單本身）。
 
 ## 資料模型（woow_ai_contact）
 
@@ -189,7 +197,7 @@ Authorization: Bearer <push key>      # 對應到某個 AI 聯絡人
   - **搜尋**（定案 31）：Odoo 18 的「開始對話」（`ChannelSelector`，手機版聊天分頁的按鈕也是它）與指令面板都呼叫 `res.partner.im_search`，原生只搜內部使用者；擴充後另外加上「名稱符合、目前使用者有權使用（`_user_allowed`）」的 AI 聯絡人機器人 partner（`Store` 結果合併）。群組為空或沒權限的永遠搜不到。選了之後前端呼叫 `discuss.channel.channel_get(partners_to=[機器人])`：覆寫後只要對象是 AI 聯絡人的機器人，就先檢查權限（沒權限丟 `AccessError`「您沒有權限使用這個 AI 聯絡人」，不建頻道），再走 `_get_or_create_chat`（招呼語、上傳旗標、已建記錄、`force_open` 設 `fold_state = open`）；其他對象照原生。`_get_or_create_chat` 自己建頻道時帶 `woow_ai_channel_get` context 略過這段。
   - **狀態**（定案 35）：`res.partner._compute_im_status` 對 AI 聯絡人的機器人（含只給 Live Chat 用的封存機器人）回 `bot`，前端顯示綠色愛心（同 OdooBot，`mail` 的 `res.partner` 對 `base.partner_root` 的做法）。
 - **設定選單**（定案 37）：AI 聯絡人、回覆工作、呼叫紀錄從「設定」（`base.menu_administration`）搬到「討論 › 配置」（`mail.menu_configuration`，與通知、語音及視訊、預設回應同一層，sequence 30–32），各自 `groups = base.group_system`（權限照舊）；舊的上層選單 `menu_woow_ai_root` 升級時刪除。18.0.1.5.0 起（QA C：內部使用者用網址 `/odoo/action-woow_ai_contact.action_woow_ai_contact` 看得到名稱與說明）視窗動作也設 `groups_id = base.group_system`，且 `woow.ai.contact` 的 `web_search_read`／`web_read`／`web_read_group`（網頁清單與表單的讀取）只給系統管理員（`_woow_ai_ui_allowed`；橋接另外開放 Live Chat 管理員，他們要幫頻道選 AI 聯絡人）。私訊、portal、推送都走 ORM，不受影響；讀取權限（ACL＋record rule）不變。
-- **portal**：第一次進任何 portal 頁面就呼叫同一個 `_woow_ai_onboard`（定案 36，同樣只建一次）。18.0.1.6.0 起掛在 `CustomerPortal._prepare_portal_layout_values`（之前只覆寫 `/my` 的 `home`）：`/my`、`/my/ai` 與其他 `/my/*` 頁都會走到，cs_portal_discuss 18.0.1.0.0 的 `/my/discussions` 也改用它，所以登入後直接進清單（書籤、通知連結）第一次就看得到 AI 私訊，又不必相依 cs_portal_discuss；卡片與 `/my/ai` 不變。不由核心自己做聊天頁（不採用 E2E 的建議）：Odoo 18 原生就有 `/discuss/channel/<id>`（`auth=public`，沙盒映像 `mail/controllers/discuss/public_page.py` 已確認）。`/my` 首頁卡片「AI 聯絡人」（portal 計數器 `woow_ai_contact_count`，沒有可用的 AI 聯絡人就不顯示）→ `/my/ai`（卡片清單）→ `/my/ai/<contact_id>/open` 找或建私訊後導到 `/discuss/channel/<id>`（Odoo 原生公開 Discuss 畫面，附件上傳／圖片預覽皆為 Odoo 原生）；有裝 `cs_portal_discuss` 時才加 `?discussions=1&back=/my/ai`（cs_portal_discuss 18.0.1.0.0 的返回列依 `back` 回到 `/my/ai`，只接受 `/my` 路徑；沒裝時 Odoo 會對未知參數記 warning）。
+- **portal**：第一次進任何 portal 頁面就呼叫同一個 `_woow_ai_onboard`（定案 36，同樣只建一次）。18.0.1.6.0 起掛在 `CustomerPortal._prepare_portal_layout_values`（之前只覆寫 `/my` 的 `home`）：`/my`、`/my/ai` 與其他 `/my/*` 頁都會走到，cs_portal_discuss 18.0.1.0.0 的 `/my/discussions` 也改用它，所以登入後直接進清單（書籤、通知連結）第一次就看得到 AI 私訊，又不必相依 cs_portal_discuss；卡片與 `/my/ai` 不變。不由核心自己做聊天頁（不採用 E2E 的建議）：Odoo 18 原生就有 `/discuss/channel/<id>`（`auth=public`，沙盒映像 `mail/controllers/discuss/public_page.py` 已確認）。`/my` 首頁卡片「AI 聯絡人」（portal 計數器 `woow_ai_contact_count`，沒有可用的 AI 聯絡人就不顯示）→ `/my/ai`（卡片清單）→ `/my/ai/<contact_id>/open` 找或建私訊後導到 `/discuss/channel/<id>`（Odoo 原生公開 Discuss 畫面，附件上傳／圖片預覽皆為 Odoo 原生）。18.0.1.7.0 起核心不再判斷 cs_portal_discuss 有沒有裝：聊天網址由 `_woow_ai_portal_chat_url(chat)` 決定，有 cs 時由橋接 `woow_ai_contact_portal_discuss` 加返回列參數、並把 `/my/ai` 併進 `/my/discussions`（見上方「portal 單一入口」）。
 - **AI 私訊不能通話**（18.0.1.6.0）：`static/src/thread_model_patch.js` 改 `Thread.allowCalls`，對方 `im_status = 'bot'` 的 chat 不顯示「開始通話」「開始視訊通話」「通話設定」（Odoo 對 OdooBot 也是這樣做）；後台（`web.assets_backend`）與 portal 公開討論頁（`mail.assets_public`）都載入。只藏按鈕：AI 本來就不會接，伺服器端不擋。內部用戶改導到後台 `/odoo/discuss?active_id=discuss.channel_<id>`。
 - AI 私訊一律設 `allow_public_upload = True`：Odoo 的 `/mail/attachment/upload` 對非內部用戶只允許在有開這個旗標的頻道上傳（沙盒實測：沒開時 portal 上傳回 403「本頻道不允許上載附件」）。私訊只有兩個成員，開了不擴大存取範圍。
 - 「開始對話」搜尋只列出自己有權使用的 AI 聯絡人（見上）；權限另外仍以 `allowed_group_ids` 在開啟與觸發回覆時把關。
