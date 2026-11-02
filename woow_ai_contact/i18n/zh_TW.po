@@ -1209,3 +1209,58 @@ msgstr "n8n webhook"
 #: code:addons/woow_ai_contact/models/ai_contact.py:0
 msgid "this server"
 msgstr "本伺服器"
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid ""
+"Allowed Groups open the AI contact to every user of the groups (by default "
+"internal users only). Shared With adds single users, e.g. portal customers: "
+"the chat appears in their Discuss or portal discussions at once. Removing "
+"someone (with no allowed group) hides the chat from them and the AI no "
+"longer answers them."
+msgstr ""
+"「允許的群組」開放給群組裡的所有使用者（預設只有內部用戶）。「分享給」逐一加入使用者，例如 portal 客戶：對方的討論或 portal "
+"討論區會立即出現這個對話。移除某人（且沒有允許的群組）後，對方看不到這個對話，AI 也不再回覆。"
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid ""
+"Every portal user can chat with this AI contact (the Portal group is "
+"allowed). To share it with some customers only, remove the Portal group and "
+"add them under Shared With."
+msgstr ""
+"所有 portal 用戶都能和這個 AI 聯絡人對話（允許了「網站入口」群組）。若只要分享給部分客戶，請移除「網站入口」"
+"群組，並把他們加到「分享給」。"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__portal_open_to_all
+msgid "Portal Open To All"
+msgstr "開放給所有 portal 用戶"
+
+#. module: woow_ai_contact
+#: model_terms:ir.ui.view,arch_db:woow_ai_contact.view_woow_ai_contact_form
+msgid "Portal customers or other users"
+msgstr "portal 客戶或其他使用者"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,field_description:woow_ai_contact.field_woow_ai_contact__shared_user_ids
+msgid "Shared With"
+msgstr "分享給"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_contact__shared_user_ids
+msgid ""
+"Single users (typically portal customers) who may chat with this AI contact,"
+" in addition to the Allowed Groups. A user added here gets the chat at once "
+"(with the welcome message); a user removed (with no allowed group) no longer"
+" sees the chat and gets no AI answer."
+msgstr ""
+"除了允許的群組以外，可以和這個 AI 聯絡人對話的個別使用者（通常是 portal "
+"客戶）。加入後對方立即有這個對話（附招呼語）；移除後（且沒有允許的群組）對方看不到對話，AI 也不再回覆。"
+
+#. module: woow_ai_contact
+#: model:ir.model.fields,help:woow_ai_contact.field_woow_ai_contact__portal_open_to_all
+msgid ""
+"The Portal group is allowed: every portal user can chat with this AI "
+"contact."
+msgstr "允許了「網站入口」群組：所有 portal 用戶都能和這個 AI 聯絡人對話。"

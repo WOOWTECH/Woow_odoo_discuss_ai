@@ -28,7 +28,8 @@ Odoo 18 模組：讓內部用戶與 portal 用戶在 Discuss 裡和「AI 聯絡�
 - **測試連線**按鈕：OpenAI 相容送 `GET /models`；n8n 送 `{"event": "ping", ..., "action": "loadPreviousSession", "sessionId": "woow-ai-ping-<id>"}`（有密鑰才簽章），Chat Trigger 不會因此執行 agent。只顯示 HTTP 狀態，不會真的跑 AI。
 - **使用者傳送的文件**（OpenAI 相容，「檔案」分頁）：`把檔案送給模型`（預設，LiteLLM／OpenAI：PDF、Word、Excel、csv 等原檔以 file 送出，Odoo 不轉換）｜`只給下載連結`（Hermes 用：它對 file 一律回 HTTP 400，agent 可以自己抓連結）。圖片兩種都內嵌。上限見 [docs/PROTOCOL.md](docs/PROTOCOL.md#documents)。
 - **招呼語**／**錯誤訊息**、**下載網域白名單**（每行一個，可用 `*.example.com`）與**檔案大小上限**（預設 20 MB）。
-- **可使用的群組**：預設內部用戶＋portal；留空＝不能私訊（只給 Live Chat 用），機器人聯絡人保持封存，不會自動建私訊、也搜尋不到。
+- **可使用的群組**：預設只有內部用戶；留空（且沒有分享給任何人）＝不能私訊（只給 Live Chat 用），機器人聯絡人保持封存，不會自動建私訊、也搜尋不到。加入 Portal 群組＝所有 portal 用戶都能用，表單會顯示警告。
+- **分享給**（存取分頁）：逐一挑選可以使用的使用者，通常是 portal 客戶。加入後對方立刻有這個私訊（附招呼語、算未讀），在後台討論或 portal 討論區直接看得到；移除後（且不在允許的群組裡）私訊從對方清單移除（保留紀錄），對方再傳訊息 AI 只回「您沒有使用這個 AI 聯絡人的權限」、不呼叫後端，portal 也不再列出。封存 AI 聯絡人不算取消分享（對話保留、回封存通知）。
 - **推送 API**：按「產生推送金鑰」，金鑰只顯示一次（只存雜湊）。
 - **除錯**：「記錄請求內容」平常請關閉。
 

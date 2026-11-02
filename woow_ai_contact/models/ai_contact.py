@@ -11,6 +11,7 @@ import hashlib
 import hmac
 import logging
 import secrets
+from datetime import timedelta
 from urllib.parse import urlsplit
 
 from odoo import api, fields, models, SUPERUSER_ID
@@ -89,6 +90,17 @@ class WoowAiContact(models.Model):
              'direct chat (the AI contact is then only used by bridges such as Live Chat) and its bot '
              'partner stays archived.',
     )
+    shared_user_ids = fields.Many2many(
+        'res.users', 'woow_ai_contact_shared_user_rel', 'contact_id', 'user_id',
+        string='Shared With', groups='base.group_system', copy=False,
+        domain=[('active', '=', True)],
+        help='Single users (typically portal customers) who may chat with this AI contact, in addition to '
+             'the Allowed Groups. A user added here gets the chat at once (with the welcome message); a user '
+             'removed (with no allowed group) no longer sees the chat and gets no AI answer.',
+    )
+    portal_open_to_all = fields.Boolean(
+        compute='_compute_portal_open_to_all', groups='base.group_system',
+        help='The Portal group is allowed: every portal user can chat with this AI contact.')
 
     # --- Backend (system administrators only) ---
     backend_type = fields.Selection(
@@ -184,6 +196,14 @@ class WoowAiContact(models.Model):
     def init(self):
         # SQL-only column: never an ORM field, so never returned by any read.
         self.env.cr.execute("ALTER TABLE woow_ai_contact ADD COLUMN IF NOT EXISTS api_key_secret VARCHAR")
+
+    @api.depends('allowed_group_ids')
+    def _compute_portal_open_to_all(self):
+        portal = self.env.ref('base.group_portal', raise_if_not_found=False)
+        for contact in self:
+            # _origin: in a form being edited the groups are new records
+            # wrapping the real ones, which never equal the real group
+            contact.portal_open_to_all = bool(portal and portal.id in contact.allowed_group_ids._origin.ids)
 
     @api.model
     def _default_allowed_groups(self):
@@ -320,7 +340,7 @@ class WoowAiContact(models.Model):
         bridges such as Live Chat), keeps it archived (no chat search hit)."""
         self.ensure_one()
         contact = self.sudo()
-        return bool(contact.active and contact.allowed_group_ids)
+        return bool(contact.active and (contact.allowed_group_ids or contact.shared_user_ids))
 
     def _sync_partner_active(self):
         for contact in self.sudo():
@@ -336,6 +356,8 @@ class WoowAiContact(models.Model):
             if not contact.partner_id:
                 partner = self.env['res.partner'].sudo().create(contact._partner_vals())
                 contact.sudo().partner_id = partner
+        for contact in contacts.sudo():
+            contact._open_chats_for(contact.shared_user_ids)
         return contacts
 
     def _key_target_changes(self, vals):
@@ -355,6 +377,8 @@ class WoowAiContact(models.Model):
         return False
 
     def write(self, vals):
+        access_changed = bool({'allowed_group_ids', 'shared_user_ids'} & set(vals))
+        shared_before = {contact.id: contact.shared_user_ids for contact in self.sudo()} if access_changed else {}
         drop_key = self.browse()
         if {'endpoint_url', 'backend_type'} & set(vals):
             keys = self._get_api_keys()
@@ -375,8 +399,12 @@ class WoowAiContact(models.Model):
                     contact.partner_id.write(partner_vals)
         if 'log_payload' in vals and not vals['log_payload']:
             self.env['woow.ai.call.log'].sudo()._erase_payloads(self.ids)
-        if {'active', 'allowed_group_ids'} & set(vals):
+        if access_changed or 'active' in vals:
             self._sync_partner_active()
+        if access_changed:
+            for contact in self.sudo():
+                contact._open_chats_for(contact.shared_user_ids - shared_before.get(contact.id, self.env['res.users']))
+            self.sudo()._hide_chats_without_access()
         if vals.get('active'):
             # archived again later: its chats get the archived note once more
             chats = self.env['discuss.channel'].sudo().search([
@@ -440,8 +468,43 @@ class WoowAiContact(models.Model):
         self.ensure_one()
         if not user or not user.active or user._is_public():
             return False
-        groups = self.sudo().allowed_group_ids
-        return bool(groups & user.sudo().groups_id)
+        contact = self.sudo()
+        return bool(contact.allowed_group_ids & user.sudo().groups_id) or user in contact.shared_user_ids
+
+    def _open_chats_for(self, users):
+        """Sharing: `users` just got this AI contact; their chat is created
+        (welcome message, unread) or pinned again, so it is in their Discuss /
+        portal list at once instead of on their next visit."""
+        self.ensure_one()
+        if not self.active or not self.partner_id:
+            return
+        for user in users:
+            if self._user_allowed(user):
+                self._get_or_create_chat(user)
+
+    def _hide_chats_without_access(self):
+        """Unpin the chats of people who may no longer use this AI contact
+        (sharing removed, group removed): the chat leaves their lists (history
+        kept) and the AI refuses to answer them."""
+        now = fields.Datetime.now()
+        for contact in self:
+            if not contact.partner_id:
+                continue
+            chats = self.env['discuss.channel'].sudo().search([
+                ('channel_type', '=', 'chat'), ('channel_member_ids.partner_id', '=', contact.partner_id.id)])
+            for member in chats.channel_member_ids:
+                if member.partner_id == contact.partner_id or not member.is_pinned:
+                    continue
+                users = member.partner_id.with_context(active_test=False).user_ids
+                # (archiving is not a loss of access: the chat stays and the AI
+                # answers with the archived note, see _woow_ai_inactive_note)
+                if users and not any(contact._user_allowed(user) for user in users):
+                    # later than the last activity, else Odoo still counts it
+                    # as pinned (is_pinned compares with >=, to the second)
+                    last = max(filter(None, [now, member.last_interest_dt, member.channel_id.last_interest_dt]))
+                    member.unpin_dt = last + timedelta(seconds=1)
+                    for user in users.filtered('active'):
+                        user._bus_send('discuss.channel/unpin', {'id': member.channel_id.id})
 
     @api.model
     def _contacts_for_user(self, user):
@@ -488,11 +551,9 @@ class WoowAiContact(models.Model):
         if not user or not user.active or user._is_public():
             return self.sudo().browse()
         group_ids = user.sudo().groups_id.ids
-        if not group_ids:
-            return self.sudo().browse()
         return self.sudo().search([
             ('partner_id', '!=', False),
-            ('allowed_group_ids', 'in', group_ids),
+            '|', ('allowed_group_ids', 'in', group_ids), ('shared_user_ids', 'in', [user.id]),
             ('onboarded_user_ids', 'not in', [user.id]),
         ])
 

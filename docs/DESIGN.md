@@ -29,7 +29,8 @@ Odoo 18。讓內部用戶與 portal 用戶在 Discuss 裡和「AI 聯絡人」�
 | `name`、`image_1920`、`description` | 顯示用；`partner_id` 同步名稱與頭像 | 有權使用者 |
 | `partner_id` | 機器人 partner（建立時自動產生，無 user，標籤「AI Contact」）。`active`＝AI 聯絡人有效**且** `allowed_group_ids` 不是空的；AI 聯絡人封存，或群組清空（只給 Live Chat 用），partner 就保持封存，一般「開始對話」搜尋找不到 | 有權使用者 |
 | `active`、`sequence` | | |
-| `allowed_group_ids` | 可使用的群組；預設 `base.group_user`（18.0.1.5.0 起，QA C；portal 使用者要由管理員明確加 `base.group_portal`，之前建立的聯絡人不變）。**空集合＝不能私訊**（不自動建私訊、「開始對話」搜不到、portal、推送都不列；只給 Live Chat 等橋接用） | 系統管理員 |
+| `allowed_group_ids` | 可使用的群組；預設 `base.group_user`（18.0.1.5.0 起，QA C）。加 `base.group_portal`＝所有 portal 用戶都能用（`portal_open_to_all` 計算欄位，表單顯示警告）。**群組空且沒有分享對象＝不能私訊**（不自動建私訊、「開始對話」搜不到、portal、推送都不列；只給 Live Chat 等橋接用） | 系統管理員 |
+| `shared_user_ids` | 18.0.1.8.0（定案 45：分享給個別 portal 用戶，不要全部預設開放）。可使用者＝在 `allowed_group_ids` **或**在這裡。`write`／`create` 時：新加入的人立即 `_get_or_create_chat`（建私訊＋招呼語，或把取消置頂的重新置頂）；群組或分享變動後 `_hide_chats_without_access()` 把不再有權的人的私訊取消置頂（`unpin_dt` 設成最後活動之後 1 秒，因為 Odoo `is_pinned` 用 `>=` 比到秒；並送 `discuss.channel/unpin` 給對方已開的畫面）。封存不算失去權限（走封存通知）。record rule 也改成「群組有交集 **或** 在 `shared_user_ids`」 | 系統管理員 |
 | `backend_type` | `openai`（Hermes／LiteLLM）或 `n8n` | 系統管理員 |
 | `endpoint_url` | openai：base URL（…/v1）；n8n：webhook 完整網址 | 系統管理員 |
 | `api_key` | 只寫不讀：非儲存 compute／inverse 欄位，實際值存在只用 SQL 存取的欄 `woow_ai_contact.api_key_secret`（不是 ORM 欄位，任何 read／export／表單都拿不到）；另有 `api_key_set` 顯示是否已設定。**端點換到另一台伺服器（scheme／主機／埠不同，或清空）或換後端類型、同一次寫入又沒給新金鑰 → 已存的金鑰自動移除**（不會把公司 LiteLLM 金鑰送到新主機，也不會把 n8n 簽章金鑰當 Bearer 送出；原本沒網址、之後才填的不算，給搬移用）；表單沒有金鑰時顯示提示。openai：Bearer 金鑰；**n8n：HMAC 簽章金鑰，表單標籤「簽章金鑰」，永遠不送出** | 系統管理員 |
@@ -204,7 +205,7 @@ Authorization: Bearer <push key>      # 對應到某個 AI 聯絡人
 
 ## 權限
 
-- `woow.ai.contact`：系統管理員全權；其他人只能讀（record rule：自己在 `allowed_group_ids` 內），且敏感欄位都有 `groups='base.group_system'`。
+- `woow.ai.contact`：系統管理員全權；其他人只能讀（record rule：自己在 `allowed_group_ids` 內或在 `shared_user_ids`），且敏感欄位都有 `groups='base.group_system'`。
 - `woow.ai.job`、`woow.ai.call.log`：只有系統管理員。
 - 私訊內容：只有成員看得到（Odoo 原生）；呼叫紀錄預設不存內容。
 - 後端網址只有系統管理員能改；`endpoint_url` 必須是 https（`localhost`／叢集內完整寫出的 `*.svc.cluster.local` 例外，給 PaaS 內網用；短服務名不接受）。

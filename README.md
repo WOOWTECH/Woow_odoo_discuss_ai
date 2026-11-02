@@ -60,7 +60,7 @@ server) or to an n8n webhook.
   URIs are attached.
 - Push API: a backend can message a user first (`POST /woow_ai/v1/push`,
   one push key per AI contact, stored hashed).
-- Access per AI contact by user groups (default: internal + portal users).
+- Access per AI contact: user groups (default: internal users only) plus single users it is shared with (typically portal customers).
 - Call logs for administrators: status, HTTP code, duration, token usage,
   error. The conversation content is stored only while "Log Request Content"
   is on. A *Test Connection* button checks a backend without running the AI.
@@ -92,7 +92,8 @@ Discuss → Configuration → AI Contacts → New (system administrators only; *
 | Retries | 0–2 (default 1), connection failures and HTTP 429/503 only |
 | Welcome / Error Message | first message of a new chat / reply when the backend fails |
 | Download Domains / Max File Size | hosts whose files in replies are attached (one per line, `*.example.com` allowed) / default 20 MB |
-| Allowed Groups | who may chat with it (default Internal User + Portal); empty = no direct chats (Live Chat only): the bot partner stays archived, no chat is created and nobody finds it |
+| Allowed Groups | who may chat with it (default Internal User only); adding Portal opens it to every portal user (the form warns); empty with nobody shared = no direct chats (Live Chat only): the bot partner stays archived, no chat is created and nobody finds it |
+| Shared With | single users (typically portal customers) who may chat with it in addition to the groups. Added: their chat is created at once (welcome message, unread). Removed (and in no allowed group): the chat leaves their lists (history kept) and the AI only answers "You do not have permission to use this AI contact" without calling the backend. Archiving the AI contact is not unsharing |
 | Push API | *Generate Push Key* shows the key once |
 | Debug | *Log Request Content* — keep off except while debugging |
 

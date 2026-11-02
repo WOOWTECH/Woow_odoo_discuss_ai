@@ -12,6 +12,7 @@
                 <field name="api_key_set" string="Key Set"/>
                 <field name="push_key_hint" string="Push Key" optional="show"/>
                 <field name="allowed_group_ids" widget="many2many_tags" optional="show"/>
+                <field name="shared_user_ids" widget="many2many_tags" optional="show"/>
                 <field name="active" column_invisible="True"/>
             </list>
         </field>
@@ -124,9 +125,18 @@
                             </div>
                         </page>
                         <page string="Access" name="access">
+                            <div class="alert alert-warning" role="alert" invisible="not portal_open_to_all">
+                                Every portal user can chat with this AI contact (the Portal group is allowed). To share it with some customers only, remove the Portal group and add them under Shared With.
+                            </div>
                             <group>
                                 <field name="allowed_group_ids" widget="many2many_tags"/>
+                                <field name="shared_user_ids" widget="many2many_tags" options="{'no_create': True}"
+                                       placeholder="Portal customers or other users"/>
+                                <field name="portal_open_to_all" invisible="1"/>
                             </group>
+                            <div class="text-muted">
+                                Allowed Groups open the AI contact to every user of the groups (by default internal users only). Shared With adds single users, e.g. portal customers: the chat appears in their Discuss or portal discussions at once. Removing someone (with no allowed group) hides the chat from them and the AI no longer answers them.
+                            </div>
                         </page>
                         <page string="Push API" name="push">
                             <group>
