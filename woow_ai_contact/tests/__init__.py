@@ -10,3 +10,5 @@ from . import test_dispatch
 from . import test_documents
 from . import test_onboarding
 from . import test_sharing
+
+from . import test_upgrade_cleanup
