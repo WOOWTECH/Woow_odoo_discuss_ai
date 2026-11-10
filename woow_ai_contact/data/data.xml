@@ -29,6 +29,7 @@
         </record>
     </data>
     <!-- 18.0.1.0.0 had a separate recovery cron: merged into the dispatcher -->
-    <delete model="ir.cron" search="[('code', '=', 'model._cron_recover_jobs()')]"/>
+    <!-- Include archived crons: deleting only their server actions violates the FK. -->
+    <delete model="ir.cron" search="[('active', 'in', [True, False]), ('code', '=', 'model._cron_recover_jobs()')]"/>
     <delete model="ir.actions.server" search="[('usage', '=', 'ir_cron'), ('code', '=', 'model._cron_recover_jobs()')]"/>
 </odoo>
